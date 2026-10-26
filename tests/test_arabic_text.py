@@ -31,7 +31,7 @@ class NormalizeForSearchTest(unittest.TestCase):
         self.assertEqual(normalize_for_search("ٱلرَّحۡمَٰنِ"), "الرحمن")
 
     def test_no_break_space_and_rub_sign(self):
-        self.assertEqual(normalize_for_search("۞ إِنَّ ٱللَّهَ"), "ان الله")
+        self.assertEqual(normalize_for_search("۞" + chr(0x00A0) + "إِنَّ ٱللَّهَ"), "ان الله")
 
     def test_strip_marks_keeps_letters(self):
         self.assertEqual(strip_marks("بِسۡمِ"), "بسم")

@@ -7,36 +7,25 @@ agrees with the app this one is modelled on.
 
 import json
 import sqlite3
-import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from support import ROOT, database_path  # noqa: E402
 from quran_app.arabic_text import normalize_for_search  # noqa: E402
 
-_temp = None
 db = None
 
 
 def setUpModule():
-    global _temp, db
-    _temp = tempfile.TemporaryDirectory()
-    path = Path(_temp.name) / "quran.db"
-    subprocess.run(
-        [sys.executable, "-I", str(ROOT / "tools" / "build_database.py"), "--output", str(path)],
-        check=True,
-        capture_output=True,
-    )
-    db = sqlite3.connect(path)
+    global db
+    db = sqlite3.connect(database_path())
 
 
 def tearDownModule():
     db.close()
-    _temp.cleanup()
 
 
 def verse(chapter, number):
@@ -119,7 +108,7 @@ class TextTest(unittest.TestCase):
         source = json.loads(
             (ROOT / "data" / "sources" / "kfgqpc" / "hafsData_v18.json").read_text(encoding="utf-8")
         )
-        by_key = {(r["sora"], r["aya_no"]): r["aya_text"].rsplit(" ", 1)[0] for r in source}
+        by_key = {(r["sora"], r["aya_no"]): r["aya_text"].rsplit(chr(0x00A0), 1)[0] for r in source}
         stored = dict(db.execute("SELECT chapter || ':' || number, text_uthmani FROM verses"))
         for (chapter, number), expected in by_key.items():
             self.assertEqual(stored[f"{chapter}:{number}"], expected, (chapter, number))

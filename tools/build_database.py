@@ -134,7 +134,7 @@ CREATE TABLE text_group_of_verse (
 ) WITHOUT ROWID;
 """
 
-TRAILING_NUMBER = re.compile(r" [٠-٩]+$")
+TRAILING_NUMBER = re.compile(chr(0x00A0) + "[" + chr(0x0660) + "-" + chr(0x0669) + "]+$")
 SAJDAH_SIGN = "۩"
 
 

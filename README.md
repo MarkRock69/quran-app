@@ -10,7 +10,7 @@ Planned stack: Python + Qt (PySide6, Qt Quick) with SQLite. Code uses the word
 ## Build order
 
 1. **Data** (done): text, search copy, chapter/juz'/rub'/page tables, tafsir
-2. Search engine
+2. **Search engine** (done): `quran_app/search.py`
 3. Mushaf page view (per-page fonts, selectable text)
 4. Navigation: lists, jump box, bookmarks, shortcuts
 5. Tafsir side panel with vertical tabs
@@ -22,7 +22,7 @@ Planned stack: Python + Qt (PySide6, Qt Quick) with SQLite. Code uses the word
 Needs only Python 3.12 (already on Ubuntu 24.04), no installs.
 
     python3 tools/build_database.py        # writes build/quran.db, about 30 seconds
-    python3 -m unittest discover -s tests  # 29 checks, about 30 seconds
+    python3 -m unittest discover -s tests  # 63 checks, about 30 seconds
 
 The build stops with an error if any count or check fails. `build/` is not
 committed; it is rebuilt from `data/sources`.
@@ -40,6 +40,30 @@ committed; it is rebuilt from `data/sources`.
 
 Search forms remove every diacritic and Qur'anic sign, unify أ إ آ ٱ → ا,
 ى → ي, ة → ه, ؤ → و, ئ → ي, and drop ء. See `quran_app/arabic_text.py`.
+
+## How search works
+
+`SearchIndex` (in `quran_app/search.py`) keeps the whole text in memory
+(loads in about 1 second) and answers a query in well under 100 ms, so it can
+run on every keystroke.
+
+- **Exact phrase, anywhere in the text, is the default.** `قيو` finds it inside
+  القيوم. A space at the start or end of the query anchors that end to a word
+  boundary, so ` الله ` finds only the whole word.
+- **Diacritics are ignored unless typed.** `ولئن` and `وَلَئِن` both work. Marks
+  you do type must be present at the same letters; marks you leave out are
+  ignored. The `strict_marks` option demands exactly the typed marks.
+  Your keyboard's sukun, tanween and the Uthmani script's own signs for them
+  are treated as the same mark.
+- **Spelling:** modern spelling finds the Uthmani one (الصلاة finds
+  ٱلصَّلَوٰةَ); أ إ آ ٱ ا, ى ي, ة ه are interchangeable. Hamza works one way:
+  typing `ئ` requires a hamza in the text, typing `ي` matches either.
+- **A phrase never spans two verses.** Hits come in Mushaf order.
+- **Modes:** the exact phrase (default), all the words in any order, or any
+  one of the words.
+- **Results:** `render(hit, before=3, after=3)` returns the Uthmani text of the
+  match with the matched characters flagged, plus the chosen number of words on
+  each side, cut off at the edges of the verse.
 
 ## Where the data comes from
 
