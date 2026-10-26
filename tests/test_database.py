@@ -1,7 +1,7 @@
 """Checks on the built database.
 
 Several expected values come from screenshots of the Quran Android app
-(surah list, juz' pages, rub' rows of juz' 1 and 6), so a pass means the data
+(chapter list, juz' pages, rub' rows of juz' 1 and 6), so a pass means the data
 agrees with the app this one is modelled on.
 """
 
@@ -39,16 +39,16 @@ def tearDownModule():
     _temp.cleanup()
 
 
-def verse(surah, number):
+def verse(chapter, number):
     return db.execute(
-        "SELECT id, page, juz, rub FROM verses WHERE surah=? AND number=?", (surah, number)
+        "SELECT id, page, juz, rub FROM verses WHERE chapter=? AND number=?", (chapter, number)
     ).fetchone()
 
 
 class StructureTest(unittest.TestCase):
     def test_totals(self):
         one = lambda sql: db.execute(sql).fetchone()[0]
-        self.assertEqual(one("SELECT COUNT(*) FROM surahs"), 114)
+        self.assertEqual(one("SELECT COUNT(*) FROM chapters"), 114)
         self.assertEqual(one("SELECT COUNT(*) FROM verses"), 6236)
         self.assertEqual(one("SELECT COUNT(*) FROM words"), 77430)
         self.assertEqual(one("SELECT COUNT(DISTINCT page) FROM verses"), 604)
@@ -64,10 +64,10 @@ class StructureTest(unittest.TestCase):
         ).fetchall()
         self.assertEqual(broken, [])
 
-    def test_surah_list_like_quran_android(self):
+    def test_chapter_list_like_quran_android(self):
         rows = {
             r[0]: r[1:]
-            for r in db.execute("SELECT id, revelation, verse_count, start_page FROM surahs")
+            for r in db.execute("SELECT id, revelation, verse_count, start_page FROM chapters")
         }
         self.assertEqual(rows[1], ("meccan", 7, 1))
         self.assertEqual(rows[2], ("medinan", 286, 2))
@@ -78,9 +78,9 @@ class StructureTest(unittest.TestCase):
         self.assertEqual([pages[1], pages[2], pages[3], pages[6]], [1, 22, 42, 102])
         self.assertEqual(pages[30], 582)
 
-    def test_juz_that_start_in_the_middle_of_a_surah(self):
+    def test_juz_that_start_in_the_middle_of_a_chapter(self):
         first = lambda juz: db.execute(
-            "SELECT v.surah, v.number FROM juz j JOIN verses v ON v.id=j.first_verse_id"
+            "SELECT v.chapter, v.number FROM juz j JOIN verses v ON v.id=j.first_verse_id"
             " WHERE j.id=?", (juz,)
         ).fetchone()
         self.assertEqual(first(2), (2, 142))
@@ -91,7 +91,7 @@ class StructureTest(unittest.TestCase):
     def test_rub_rows_of_juz_1_like_quran_android(self):
         expected = [((1, 1), 1), ((2, 26), 5), ((2, 44), 7), ((2, 60), 9), ((2, 75), 11), ((2, 92), 14)]
         actual = db.execute(
-            "SELECT v.surah, v.number, r.start_page FROM rubs r"
+            "SELECT v.chapter, v.number, r.start_page FROM rubs r"
             " JOIN verses v ON v.id=r.first_verse_id WHERE r.id BETWEEN 1 AND 6 ORDER BY r.id"
         ).fetchall()
         self.assertEqual([((s, n), p) for s, n, p in actual], expected)
@@ -99,7 +99,7 @@ class StructureTest(unittest.TestCase):
     def test_rub_rows_of_juz_6_like_quran_android(self):
         expected = [((4, 148), 102), ((4, 163), 104), ((5, 1), 106), ((5, 12), 109), ((5, 27), 112)]
         actual = db.execute(
-            "SELECT v.surah, v.number, r.start_page, r.hizb, r.position_in_hizb FROM rubs r"
+            "SELECT v.chapter, v.number, r.start_page, r.hizb, r.position_in_hizb FROM rubs r"
             " JOIN verses v ON v.id=r.first_verse_id WHERE r.id BETWEEN 41 AND 45 ORDER BY r.id"
         ).fetchall()
         self.assertEqual([((s, n), p) for s, n, p, _, _ in actual], expected)
@@ -120,9 +120,9 @@ class TextTest(unittest.TestCase):
             (ROOT / "data" / "sources" / "kfgqpc" / "hafsData_v18.json").read_text(encoding="utf-8")
         )
         by_key = {(r["sora"], r["aya_no"]): r["aya_text"].rsplit(" ", 1)[0] for r in source}
-        stored = dict(db.execute("SELECT surah || ':' || number, text_uthmani FROM verses"))
-        for (surah, number), expected in by_key.items():
-            self.assertEqual(stored[f"{surah}:{number}"], expected, (surah, number))
+        stored = dict(db.execute("SELECT chapter || ':' || number, text_uthmani FROM verses"))
+        for (chapter, number), expected in by_key.items():
+            self.assertEqual(stored[f"{chapter}:{number}"], expected, (chapter, number))
         # and the marks really are there
         first = stored["1:1"]
         self.assertNotEqual(first, normalize_for_search(first))
@@ -147,7 +147,7 @@ class TextTest(unittest.TestCase):
             return {
                 (s, n)
                 for s, n in db.execute(
-                    "SELECT surah, number FROM verses"
+                    "SELECT chapter, number FROM verses"
                     " WHERE instr(search_imlaei, ?) > 0 OR instr(search_uthmani, ?) > 0",
                     (needle, needle),
                 )

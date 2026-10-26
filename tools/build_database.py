@@ -31,7 +31,7 @@ from quran_app.word_alignment import align_words  # noqa: E402
 SOURCES = ROOT / "data" / "sources"
 
 EXPECTED = {
-    "surahs": 114,
+    "chapters": 114,
     "verses": 6236,
     "pages": 604,
     "juz": 30,
@@ -53,7 +53,7 @@ TEXT_SOURCES = [
 ]
 
 SCHEMA = """
-CREATE TABLE surahs (
+CREATE TABLE chapters (
     id            INTEGER PRIMARY KEY,
     name_ar       TEXT NOT NULL,
     revelation    TEXT NOT NULL CHECK (revelation IN ('meccan', 'medinan')),
@@ -80,7 +80,7 @@ CREATE TABLE rubs (
 
 CREATE TABLE verses (
     id              INTEGER PRIMARY KEY,
-    surah           INTEGER NOT NULL REFERENCES surahs(id),
+    chapter           INTEGER NOT NULL REFERENCES chapters(id),
     number          INTEGER NOT NULL,
     page            INTEGER NOT NULL,
     line_start      INTEGER NOT NULL,
@@ -93,7 +93,7 @@ CREATE TABLE verses (
     text_imlaei     TEXT NOT NULL,
     search_uthmani  TEXT NOT NULL,
     search_imlaei   TEXT NOT NULL,
-    UNIQUE (surah, number)
+    UNIQUE (chapter, number)
 );
 CREATE INDEX verses_page ON verses(page);
 
@@ -205,7 +205,7 @@ def prepare_verses(rows, meta):
         verses.append(
             {
                 "id": verse_id,
-                "surah": row["sora"],
+                "chapter": row["sora"],
                 "number": row["aya_no"],
                 "page": row["page"],
                 "line_start": row["line_start"],
@@ -243,8 +243,8 @@ def import_text_sources(connection, verse_id_of):
             covered = set()
 
             def to_id(ayah_key):
-                surah, number = ayah_key.split(":")
-                return verse_id_of[(int(surah), int(number))]
+                chapter, number = ayah_key.split(":")
+                return verse_id_of[(int(chapter), int(number))]
 
             if kind == "translation":
                 for ayah_key, text in source.execute("SELECT ayah_key, text FROM translation"):
@@ -297,7 +297,7 @@ def build(output):
     meta = json.loads((SOURCES / "quran_meta.json").read_text(encoding="utf-8"))
     rows = load_verses()
     verses, words, rub_first_verse, alignment_costs = prepare_verses(rows, meta)
-    verse_id_of = {(v["surah"], v["number"]): v["id"] for v in verses}
+    verse_id_of = {(v["chapter"], v["number"]): v["id"] for v in verses}
     page_of = {v["id"]: v["page"] for v in verses}
 
     if output.exists():
@@ -307,13 +307,13 @@ def build(output):
     connection.execute("PRAGMA foreign_keys = ON")
     connection.executescript(SCHEMA)
 
-    # Surahs
-    surah_names = {row["sora"]: row["sora_name_ar"] for row in rows}
-    for surah, name in sorted(surah_names.items()):
-        own = [v for v in verses if v["surah"] == surah]
+    # Chapters
+    chapter_names = {row["sora"]: row["sora_name_ar"] for row in rows}
+    for chapter, name in sorted(chapter_names.items()):
+        own = [v for v in verses if v["chapter"] == chapter]
         connection.execute(
-            "INSERT INTO surahs VALUES (?,?,?,?,?,?)",
-            (surah, name, meta["revelation"][str(surah)], len(own), own[0]["id"], own[0]["page"]),
+            "INSERT INTO chapters VALUES (?,?,?,?,?,?)",
+            (chapter, name, meta["revelation"][str(chapter)], len(own), own[0]["id"], own[0]["page"]),
         )
 
     # Juz': the first verse of each juz' in the print
@@ -331,7 +331,7 @@ def build(output):
         )
 
     column_names = [
-        "id", "surah", "number", "page", "line_start", "line_end", "juz", "rub",
+        "id", "chapter", "number", "page", "line_start", "line_end", "juz", "rub",
         "has_sajdah", "word_count", "text_uthmani", "text_imlaei",
         "search_uthmani", "search_imlaei",
     ]
@@ -353,7 +353,7 @@ def build(output):
     def count(table):
         return connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
 
-    check_equal("surahs", count("surahs"), EXPECTED["surahs"])
+    check_equal("chapters", count("chapters"), EXPECTED["chapters"])
     check_equal("verses", count("verses"), EXPECTED["verses"])
     check_equal("juz'", count("juz"), EXPECTED["juz"])
     check_equal("rub'", count("rubs"), EXPECTED["rubs"])
@@ -364,8 +364,8 @@ def build(output):
         EXPECTED["pages"],
     )
     check_equal(
-        "verses in surah table",
-        connection.execute("SELECT SUM(verse_count) FROM surahs").fetchone()[0],
+        "verses in chapter table",
+        connection.execute("SELECT SUM(verse_count) FROM chapters").fetchone()[0],
         EXPECTED["verses"],
     )
     connection.close()
@@ -373,7 +373,7 @@ def build(output):
     costs = Counter(alignment_costs.values())
     worst = sorted(alignment_costs.items(), key=lambda item: -item[1])[:5]
     print(f"Wrote {output} ({output.stat().st_size / 1_000_000:.1f} MB)")
-    print(f"  {EXPECTED['surahs']} surahs, {EXPECTED['verses']} verses, {EXPECTED['words']} words, "
+    print(f"  {EXPECTED['chapters']} chapters, {EXPECTED['verses']} verses, {EXPECTED['words']} words, "
           f"{EXPECTED['pages']} pages, {EXPECTED['juz']} juz', {EXPECTED['rubs']} rub'")
     print(f"  word alignment cost per verse (letters that differ): {dict(sorted(costs.items()))}")
     print(f"  least certain verses: {worst}")

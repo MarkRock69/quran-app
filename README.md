@@ -9,7 +9,7 @@ Planned stack: Python + Qt (PySide6, Qt Quick) with SQLite. Code uses the word
 
 ## Build order
 
-1. **Data** (done): text, search copy, surah/juz'/rub'/page tables, tafsir
+1. **Data** (done): text, search copy, chapter/juz'/rub'/page tables, tafsir
 2. Search engine
 3. Mushaf page view (per-page fonts, selectable text)
 4. Navigation: lists, jump box, bookmarks, shortcuts
@@ -31,7 +31,7 @@ committed; it is rebuilt from `data/sources`.
 
 | Table | Contents |
 |---|---|
-| `surahs` | name, Meccan/Medinan, verse count, first verse, start page |
+| `chapters` | name, Meccan/Medinan, verse count, first verse, start page |
 | `juz` | first verse and start page of each of the 30 juz' |
 | `rubs` | 240 quarters of a hizb: hizb number, position in the hizb (1 to 4), first verse, start page |
 | `verses` | 6236 verses: page, lines, juz', rub', full Uthmani text, modern-spelling text, and a search copy of each |
@@ -53,12 +53,12 @@ Cross-checks done while building:
 
 - The 240 rub' start verses agree with the rub' sign (۞) printed in the King
   Fahd text: all 199 signs sit on a rub' start, and the other 41 starts are
-  verse 1 of a surah, which carries no sign.
+  verse 1 of a chapter, which carries no sign.
 - Juz' boundaries come from the print, not from the rub' list. In the print,
   juz' 4 starts at 3:92 and juz' 11 at 9:94, at the top of pages 62 and 202.
   The rub' sign sits one verse earlier or later in those two places (3:93,
   9:93), so a rub' can start in a different juz' than the one its verse is in.
-- Surah, juz' and rub' start pages match the Quran Android screenshots
+- Chapter, juz' and rub' start pages match the Quran Android screenshots
   (tests/test_database.py).
 
 The per-page Mushaf fonts (King Fahd Complex) are not in this repository yet;
