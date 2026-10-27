@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from quran_app.arabic_text import has_letters, normalize_for_search  # noqa: E402
+from quran_app.page_layout import word_spans  # noqa: E402
 from quran_app.word_alignment import align_words  # noqa: E402
 
 SOURCES = ROOT / "data" / "sources"
@@ -37,6 +38,7 @@ EXPECTED = {
     "juz": 30,
     "rubs": 240,
     "words": 77430,
+    "glyphs": 83668,  # every word once more, plus a verse-end marker per verse
 }
 
 # (key, tab title, kind, language, QUL zip file, file inside the zip)
@@ -82,7 +84,8 @@ CREATE TABLE verses (
     id              INTEGER PRIMARY KEY,
     chapter           INTEGER NOT NULL REFERENCES chapters(id),
     number          INTEGER NOT NULL,
-    page            INTEGER NOT NULL,
+    page            INTEGER NOT NULL,  -- page where the verse starts
+    last_page       INTEGER NOT NULL,  -- page where it ends
     line_start      INTEGER NOT NULL,
     line_end        INTEGER NOT NULL,
     juz             INTEGER NOT NULL REFERENCES juz(id),
@@ -107,6 +110,30 @@ CREATE TABLE words (
     search_imlaei  TEXT NOT NULL,
     UNIQUE (verse_id, position)
 );
+
+-- What is drawn on the Mushaf pages. A glyph is one word as the page font
+-- draws it (with its stop sign, if any) or a verse-end marker.
+CREATE TABLE glyphs (
+    id         INTEGER PRIMARY KEY,   -- reading order over the whole Mushaf
+    page       INTEGER NOT NULL,
+    line       INTEGER NOT NULL,
+    slot       INTEGER NOT NULL,      -- order within the line, 1 = first read
+    verse_id   INTEGER NOT NULL REFERENCES verses(id),
+    first_word INTEGER,               -- our word numbers it stands for;
+    last_word  INTEGER,               -- both NULL for a verse-end marker
+    text       TEXT NOT NULL,         -- the characters to draw in the page font
+    UNIQUE (page, line, slot)
+);
+CREATE INDEX glyphs_verse ON glyphs(verse_id);
+
+CREATE TABLE page_lines (
+    page     INTEGER NOT NULL,
+    line     INTEGER NOT NULL,
+    kind     TEXT NOT NULL CHECK (kind IN ('chapter_name', 'basmala', 'text')),
+    centered INTEGER NOT NULL,
+    chapter  INTEGER,                 -- for chapter_name lines
+    PRIMARY KEY (page, line)
+) WITHOUT ROWID;
 
 CREATE TABLE text_sources (
     id         INTEGER PRIMARY KEY,
@@ -208,6 +235,7 @@ def prepare_verses(rows, meta):
                 "chapter": row["sora"],
                 "number": row["aya_no"],
                 "page": row["page"],
+                "last_page": row["page"],
                 "line_start": row["line_start"],
                 "line_end": row["line_end"],
                 "juz": row["jozz"],
@@ -293,6 +321,100 @@ def import_text_sources(connection, verse_id_of):
             source.close()
 
 
+def unzip_database(archive_name, folder):
+    archive = SOURCES / "qul" / archive_name
+    if not archive.exists():
+        fail(f"missing {archive}")
+    with zipfile.ZipFile(archive) as bundle:
+        member = bundle.namelist()[0]
+        bundle.extract(member, folder)
+    return sqlite3.connect(f"file:{Path(folder) / member}?mode=ro", uri=True)
+
+
+def import_page_layout(connection):
+    """Add the glyphs and lines of every page, and set each verse's real page.
+
+    Pages, lines and the start page of every chapter, juz' and rub' follow the
+    layout (the 1441H print), not the page numbers of the text source.
+    """
+    words_per_verse = {
+        (chapter, number): (verse_id, count)
+        for verse_id, chapter, number, count in connection.execute(
+            "SELECT id, chapter, number, word_count FROM verses"
+        )
+    }
+    with tempfile.TemporaryDirectory() as folder:
+        glyph_db = unzip_database("qpc-v4.db.zip", folder)
+        layout_db = unzip_database("qpc-v4-tajweed-15-lines.db.zip", folder)
+        rows = glyph_db.execute(
+            "SELECT id, surah, ayah, word, text FROM words ORDER BY id"
+        ).fetchall()
+        lines = layout_db.execute(
+            "SELECT page_number, line_number, line_type, is_centered, first_word_id,"
+            " last_word_id, surah_number FROM pages ORDER BY page_number, line_number"
+        ).fetchall()
+
+    # What each glyph stands for
+    glyph_info = {}
+    by_verse = {}
+    for glyph_id, chapter, number, position, text in rows:
+        by_verse.setdefault((chapter, number), []).append((glyph_id, position, text))
+    check_equal("verses in the layout words", len(by_verse), EXPECTED["verses"])
+    for (chapter, number), entries in by_verse.items():
+        verse_id, word_count = words_per_verse[(chapter, number)]
+        entries.sort(key=lambda entry: entry[1])
+        if [entry[1] for entry in entries] != list(range(1, len(entries) + 1)):
+            fail(f"layout words of {chapter}:{number} are not numbered 1..n")
+        try:
+            spans = word_spans(chapter, number, len(entries) - 1, word_count)
+        except ValueError as problem:
+            fail(str(problem))
+        for (glyph_id, _, text), span in zip(entries, spans):
+            glyph_info[glyph_id] = (verse_id, span[0], span[1], text)
+        glyph_id, _, text = entries[-1]  # the verse-end marker
+        glyph_info[glyph_id] = (verse_id, None, None, text)
+    check_equal("glyphs", len(glyph_info), EXPECTED["glyphs"])
+
+    # Where each glyph is drawn
+    placed = {}
+    for page, line, kind, centered, first_id, last_id, chapter in lines:
+        kind = {"surah_name": "chapter_name", "basmallah": "basmala", "ayah": "text"}[kind]
+        connection.execute(
+            "INSERT INTO page_lines VALUES (?,?,?,?,?)",
+            (page, line, kind, int(centered or 0), chapter or None),
+        )
+        if kind == "text":
+            for slot, glyph_id in enumerate(range(int(first_id), int(last_id) + 1), 1):
+                if glyph_id in placed:
+                    fail(f"glyph {glyph_id} is placed twice")
+                placed[glyph_id] = (page, line, slot)
+    if set(placed) != set(glyph_info):
+        fail("the layout and the layout words do not describe the same glyphs")
+    connection.executemany(
+        "INSERT INTO glyphs VALUES (?,?,?,?,?,?,?,?)",
+        [(gid, *placed[gid], *glyph_info[gid]) for gid in sorted(glyph_info)],
+    )
+
+    # Pages and lines of the verses, from where their glyphs are drawn
+    connection.execute(
+        """UPDATE verses SET
+             page = (SELECT MIN(page) FROM glyphs WHERE verse_id = verses.id),
+             last_page = (SELECT MAX(page) FROM glyphs WHERE verse_id = verses.id)"""
+    )
+    connection.execute(
+        """UPDATE verses SET
+             line_start = (SELECT MIN(line) FROM glyphs WHERE verse_id = verses.id
+                           AND page = verses.page),
+             line_end = (SELECT MAX(line) FROM glyphs WHERE verse_id = verses.id
+                         AND page = verses.last_page)"""
+    )
+    for table in ("chapters", "juz", "rubs"):
+        connection.execute(
+            f"UPDATE {table} SET start_page = "
+            "(SELECT page FROM verses WHERE id = first_verse_id)"
+        )
+
+
 def build(output):
     meta = json.loads((SOURCES / "quran_meta.json").read_text(encoding="utf-8"))
     rows = load_verses()
@@ -331,7 +453,7 @@ def build(output):
         )
 
     column_names = [
-        "id", "chapter", "number", "page", "line_start", "line_end", "juz", "rub",
+        "id", "chapter", "number", "page", "last_page", "line_start", "line_end", "juz", "rub",
         "has_sajdah", "word_count", "text_uthmani", "text_imlaei",
         "search_uthmani", "search_imlaei",
     ]
@@ -347,6 +469,7 @@ def build(output):
     )
 
     import_text_sources(connection, verse_id_of)
+    import_page_layout(connection)
     connection.commit()
 
     # Final checks on what was written

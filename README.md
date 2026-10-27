@@ -11,7 +11,7 @@ Planned stack: Python + Qt (PySide6, Qt Quick) with SQLite. Code uses the word
 
 1. **Data** (done): text, search copy, chapter/juz'/rub'/page tables, tafsir
 2. **Search engine** (done): `quran_app/search.py`
-3. Mushaf page view (per-page fonts, selectable text)
+3. **Mushaf page view** (page model done and tested; the Qt window is written but not yet run, see below)
 4. Navigation: lists, jump box, bookmarks, shortcuts
 5. Tafsir side panel with vertical tabs
 6. Audio, with a selectable passage
@@ -22,7 +22,7 @@ Planned stack: Python + Qt (PySide6, Qt Quick) with SQLite. Code uses the word
 Needs only Python 3.12 (already on Ubuntu 24.04), no installs.
 
     python3 tools/build_database.py        # writes build/quran.db, about 30 seconds
-    python3 -m unittest discover -s tests  # 63 checks, about 30 seconds
+    python3 -m unittest discover -s tests  # about 95 checks, about 40 seconds
 
 The build stops with an error if any count or check fails. `build/` is not
 committed; it is rebuilt from `data/sources`.
@@ -36,6 +36,8 @@ committed; it is rebuilt from `data/sources`.
 | `rubs` | 240 quarters of a hizb: hizb number, position in the hizb (1 to 4), first verse, start page |
 | `verses` | 6236 verses: page, lines, juz', rub', full Uthmani text, modern-spelling text, and a search copy of each |
 | `words` | 77,430 Uthmani words, each with its modern spelling and search forms |
+| `glyphs` | 83,668 page glyphs: one per word (with its stop sign) plus a verse-end marker per verse, each with its page, line and position, and the words of the verse it stands for |
+| `page_lines` | the 15 lines of each of the 604 pages (8 for pages 1 and 2): chapter name, basmala or text, centered or justified |
 | `text_sources`, `text_groups`, `text_group_of_verse` | the five tafsir and translation sources; a tafsir covering several verses is stored once |
 
 Search forms remove every diacritic and Qur'anic sign, unify أ إ آ ٱ → ا,
@@ -72,6 +74,7 @@ run on every keystroke.
 | `kfgqpc/hafsData_v18.json` | King Fahd Glorious Qur'an Printing Complex, via [ibnhazm/KFGQPC](https://github.com/ibnhazm/KFGQPC) | Uthmani text, modern-spelling text, page, line, juz' |
 | `quran_meta.json` | rub' start verses and place of revelation, taken from [malekverse/quran-dataset](https://github.com/malekverse/quran-dataset) | rub' and Meccan/Medinan |
 | `qul/*.zip` | [QUL](https://qul.tarteel.ai) (Tarteel) | Al-Mukhtasar, Al-Muyassar, Al-Tahrir wa al-Tanwir, I'rab al-Qur'an (Darwish), Sahih International |
+| `qul/qpc-v4.db.zip`, `qul/qpc-v4-tajweed-15-lines.db.zip` | QUL, KFGQPC V4 (1441H print) | the glyph of every word, and which words are on which line of which page |
 
 Cross-checks done while building:
 
@@ -85,8 +88,27 @@ Cross-checks done while building:
 - Chapter, juz' and rub' start pages match the Quran Android screenshots
   (tests/test_database.py).
 
-The per-page Mushaf fonts (King Fahd Complex) are not in this repository yet;
-they are added in step 3. The Clear Qur'an translation is not included (no
+The page layout (1441H print) agrees with the text source on the page of every
+verse, so no chapter, juz' or rub' start page changed. No verse crosses a page.
+Four verses are written with one word more or fewer than our text
+(15:7, 27:20, 36:22, 37:130); `quran_app/page_layout.py` lines them up.
+
+## The Mushaf window
+
+    python3 tools/fetch_fonts.py                      # once: the 604 page fonts, about 200 MB
+    pip install PySide6                               # once
+    python3 -m quran_app.reader --page 42 --spread    # two pages; leave out --spread for one
+
+Left or PageDown = next page, Right or PageUp = previous page, Ctrl+2 = one or
+two pages, Ctrl+C = copy the selection (real Uthmani text, with verse numbers in
+ornate brackets). The page fonts are drawn with the glyph codes in `glyphs`
+(QCF V2 fonts, plain, no tajweed colours). Stretching of word gaps to fill each
+line is done by the window, because these fonts leave it to the app.
+`quran_app/mushaf.py` holds everything that does not need Qt and is tested; the
+Qt window `quran_app/reader.py` was written without being able to run Qt, so
+expect to fix small things on the first run.
+
+The Clear Qur'an translation is not included (no
 download available); its tab is reserved in the tab order.
 
 The King Fahd data, QUL data and fonts have their own terms. This repository is
