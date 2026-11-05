@@ -2,7 +2,7 @@
 
     python3 -m quran_app.reader [--page 42] [--spread]
 
-Keys:  Left / PageDown = next page,  Right / PageUp = previous page,
+Keys:  Left / PageDown / scroll down = next page,  Right / PageUp / scroll up = previous,
        Ctrl+2 = switch between one page and two,  Ctrl+C = copy the selection,
        Home / End = first / last page,  Ctrl+Q = quit.
 Select text with the mouse; Ctrl+C (or the right-click menu) copies the real
@@ -16,7 +16,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QAction, QColor, QFont, QFontDatabase, QFontMetricsF, QGuiApplication, QKeySequence,
     QPainter, QPen,
@@ -71,9 +71,15 @@ class Fonts:
         return lambda text: metrics.horizontalAdvance(text) / MEASURE_SIZE
 
 
+WHEEL_STEP = 120  # one notch of a mouse wheel; touchpads send smaller amounts that add up
+
+
 class PageCanvas(QWidget):
+    page_step = Signal(int)  # +1 = next page (or spread), -1 = previous
+
     def __init__(self, mushaf, fonts):
         super().__init__()
+        self._wheel = 0
         self.mushaf = mushaf
         self.fonts = fonts
         self.pages = []  # pages shown, right to left
@@ -92,6 +98,14 @@ class PageCanvas(QWidget):
     def resizeEvent(self, event):
         self._layouts.clear()
         super().resizeEvent(event)
+
+    def wheelEvent(self, event):
+        """Scroll down for the next page, up for the previous one."""
+        self._wheel += event.angleDelta().y()
+        while abs(self._wheel) >= WHEEL_STEP:
+            self.page_step.emit(1 if self._wheel < 0 else -1)
+            self._wheel += WHEEL_STEP if self._wheel < 0 else -WHEEL_STEP
+        event.accept()
 
     # ------------------------------------------------------------ layout
 
@@ -219,6 +233,7 @@ class ReaderWindow(QMainWindow):
         self.setWindowTitle("القرآن الكريم")  # القرآن الكريم
         self.canvas = PageCanvas(mushaf, fonts)
         self.setCentralWidget(self.canvas)
+        self.canvas.page_step.connect(self.step)
         self.page = page
         self.spread = spread
         self.resize(1100, 800)
@@ -227,8 +242,8 @@ class ReaderWindow(QMainWindow):
     def refresh(self):
         if self.spread:
             left, right = spread_of(self.page)
-            self.page = right or left
-            self.canvas.show_pages([right, left])  # right page first
+            self.page = right
+            self.canvas.show_pages([right, left])  # read right to left: the right page first
         else:
             self.canvas.show_pages([self.page])
 
@@ -239,9 +254,7 @@ class ReaderWindow(QMainWindow):
     def step(self, direction):
         if self.spread:
             left, right = spread_of(self.page)
-            shown = [p for p in (left, right) if p]
-            target = max(shown) + 1 if direction > 0 else min(shown) - 1
-            self.go_to(target)
+            self.go_to(left + 1 if direction > 0 else right - 1)
         else:
             self.go_to(self.page + direction)
 

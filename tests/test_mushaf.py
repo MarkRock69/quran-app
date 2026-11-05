@@ -28,25 +28,29 @@ def verse_text(chapter, number):
 
 
 class SpreadTest(unittest.TestCase):
-    def test_first_page_is_alone_on_the_right(self):
-        self.assertEqual(spread_of(1), (None, 1))
+    def test_first_spread_has_page_one_on_the_right(self):
+        self.assertEqual(spread_of(1), (2, 1))
+        self.assertEqual(spread_of(2), (2, 1))
 
-    def test_left_is_even_and_right_is_odd(self):
-        self.assertEqual(spread_of(2), (2, 3))
-        self.assertEqual(spread_of(3), (2, 3))
-        self.assertEqual(spread_of(42), (42, 43))
-        self.assertEqual(spread_of(43), (42, 43))
+    def test_right_is_odd_and_comes_first(self):
+        for page in (3, 4, 42, 43):
+            left, right = spread_of(page)
+            self.assertEqual(right % 2, 1)
+            self.assertEqual(left, right + 1)
+        self.assertEqual(spread_of(42), (42, 41))
+        self.assertEqual(spread_of(43), (44, 43))
 
-    def test_last_page_is_alone_on_the_left(self):
-        self.assertEqual(spread_of(603), (602, 603))
-        self.assertEqual(spread_of(604), (604, None))
+    def test_last_spread_is_603_and_604(self):
+        self.assertEqual(spread_of(603), (604, 603))
+        self.assertEqual(spread_of(604), (604, 603))
 
     def test_every_page_belongs_to_exactly_one_spread(self):
         seen = {}
         for page in range(1, 605):
             seen.setdefault(spread_of(page), []).append(page)
-        shown = sorted(p for left, right in seen for p in (left, right) if p)
+        shown = sorted(p for left, right in seen for p in (left, right))
         self.assertEqual(shown, list(range(1, 605)))
+        self.assertEqual(len(seen), 302)
 
     def test_no_such_page(self):
         for page in (0, 605):

@@ -99,8 +99,10 @@ Four verses are written with one word more or fewer than our text
     pip install PySide6                               # once
     python3 -m quran_app.reader --page 42 --spread    # two pages; leave out --spread for one
 
-Left or PageDown = next page, Right or PageUp = previous page, Ctrl+2 = one or
-two pages, Ctrl+C = copy the selection (real Uthmani text, with verse numbers in
+Left, PageDown or scrolling down = next page; Right, PageUp or scrolling up =
+previous page; Ctrl+2 = one or two pages. In two-page mode the book is read right
+to left like the printed Mushaf: 1 on the right and 2 on the left, then 3|4, and
+so on. Ctrl+C = copy the selection (real Uthmani text, with verse numbers in
 ornate brackets). The page fonts are drawn with the glyph codes in `glyphs`
 (QCF V2 fonts, plain, no tajweed colours). Stretching of word gaps to fill each
 line is done by the window, because these fonts leave it to the app.

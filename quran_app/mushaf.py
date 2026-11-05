@@ -65,17 +65,15 @@ class Page:
 def spread_of(page):
     """The pages shown together when the book is open at `page`.
 
-    Page 1 is shown alone. After that the left page is even and the right
-    page odd (2|3, 4|5, ...), and the last page, 604, is alone on the left.
-    Returns (left, right); either may be None.
+    The book is read right to left, as in the printed Mushaf: the first spread
+    is page 1 on the right and page 2 on the left, then 3 on the right and 4
+    on the left, and so on up to 603 and 604. The right page is always odd and
+    comes first. Returns (left, right).
     """
     if not 1 <= page <= PAGE_COUNT:
         raise ValueError(f"no page {page}")
-    if page == 1:
-        return (None, 1)
-    left = page if page % 2 == 0 else page - 1
-    right = left + 1
-    return (left, right if right <= PAGE_COUNT else None)
+    right = page if page % 2 == 1 else page - 1
+    return (right + 1, right)
 
 
 class Mushaf:
