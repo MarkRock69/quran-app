@@ -14,18 +14,14 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Optional
 
+from .numbers import format_number
+from .page_header import PageInfo, rub_progress
+
 PAGE_COUNT = 604
 
 # Ornate parentheses written around a verse number when copying.
 _PAREN_OPEN = chr(0xFD3F)
 _PAREN_CLOSE = chr(0xFD3E)
-_INDIC_DIGITS = str.maketrans("0123456789", "".join(chr(0x0660 + i) for i in range(10)))
-
-
-def format_number(number, digits="indic"):
-    """`number` in Arabic-Indic (١٢٣) or Western (123) digits."""
-    text = str(number)
-    return text.translate(_INDIC_DIGITS) if digits == "indic" else text
 
 
 @dataclass(frozen=True)
@@ -117,6 +113,17 @@ class Mushaf:
         )
         return Page(number, lines)
 
+    @lru_cache(maxsize=64)
+    def page_info(self, number):
+        """Juz', chapter and rub' mark for the heading of a page."""
+        first = self.page(number).cells[0]
+        (juz,) = self._connection.execute("SELECT juz FROM verses WHERE id = ?", (first.verse_id,)).fetchone()
+        rub = self._connection.execute(
+            "SELECT hizb, position_in_hizb FROM rubs WHERE start_page = ?", (number,)
+        ).fetchone()
+        progress = rub_progress(*rub) if rub else None
+        return PageInfo(juz, first.chapter, *(progress or (None, None)))
+
     def page_of_verse(self, chapter, number):
         row = self._connection.execute(
             "SELECT page FROM verses WHERE chapter = ? AND number = ?", (chapter, number)
@@ -189,8 +196,8 @@ def layout_page(page, measure, width, height, default_size, gap_em=0.3):
     """Place every element of a page inside a `width` x `height` box.
 
     `measure(text)` returns the width of `text` in the page font, in ems (a
-    font size of 1). The font size is chosen so that the widest justified line
-    exactly fills the width. Justified lines then share the leftover space
+    font size of 1). The font size is chosen so that the widest line exactly
+    fills the width and no centered line is wider than the page. Justified lines then share the leftover space
     between their words; centered lines keep a fixed gap. Pages with no
     justified line (the first ones) use `default_size`.
 
@@ -201,12 +208,22 @@ def layout_page(page, measure, width, height, default_size, gap_em=0.3):
         for line in page.lines
         if line.kind == "text"
     }
+    centered_widest = [
+        sum(widths[line.number]) + gap_em * (len(line.cells) - 1)
+        for line in page.lines
+        if line.kind == "text" and line.cells and (line.centered or len(line.cells) < 2)
+    ]
     justified_widest = [
         sum(widths[line.number])
         for line in page.lines
         if line.kind == "text" and not line.centered and len(line.cells) > 1
     ]
-    size = width / max(justified_widest) if justified_widest else default_size
+    limits = [width / max(centered_widest)] if centered_widest else []
+    if justified_widest:
+        limits.append(width / max(justified_widest))
+        size = min(limits)
+    else:
+        size = min([default_size] + limits)
     pitch = height / len(page.lines)
     placed = []
     for index, line in enumerate(page.lines):

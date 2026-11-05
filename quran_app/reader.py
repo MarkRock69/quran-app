@@ -3,7 +3,8 @@
     python3 -m quran_app.reader [--page 42] [--spread]
 
 Keys:  Left / PageDown / scroll down = next page,  Right / PageUp / scroll up = previous,
-       Ctrl+2 = switch between one page and two,  Ctrl+C = copy the selection,
+       Ctrl+2 = switch between one page and two,
+       Ctrl+D = numbers as Arabic-Indic digits, Western digits, or ordinal words,  Ctrl+C = copy the selection,
        Home / End = first / last page,  Ctrl+Q = quit.
 Select text with the mouse; Ctrl+C (or the right-click menu) copies the real
 Uthmani text, not the font's glyph codes.
@@ -23,7 +24,9 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QWidget
 
-from .mushaf import PAGE_COUNT, Mushaf, format_number, hit_test, layout_page, spread_of
+from .mushaf import PAGE_COUNT, Mushaf, hit_test, layout_page, spread_of
+from .numbers import format_number, next_style
+from .page_header import header_for
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE_ASPECT = 0.70  # width / height of one page
@@ -80,6 +83,7 @@ class PageCanvas(QWidget):
     def __init__(self, mushaf, fonts):
         super().__init__()
         self._wheel = 0
+        self.number_style = "indic"  # 'indic', 'western' or 'words'
         self.mushaf = mushaf
         self.fonts = fonts
         self.pages = []  # pages shown, right to left
@@ -94,6 +98,14 @@ class PageCanvas(QWidget):
         self.selection = None
         self._layouts.clear()
         self.update()
+
+    def set_number_style(self, style):
+        self.number_style = style
+        self.update()
+
+    @property
+    def _digits(self):
+        return "western" if self.number_style == "western" else "indic"
 
     def resizeEvent(self, event):
         self._layouts.clear()
@@ -127,8 +139,8 @@ class PageCanvas(QWidget):
 
     def _layout(self, page, rect):
         if page not in self._layouts:
-            inner = QRectF(rect.x() + rect.width() * 0.04, rect.y() + rect.height() * 0.03,
-                           rect.width() * 0.92, rect.height() * 0.90)
+            inner = QRectF(rect.x() + rect.width() * 0.04, rect.y() + rect.height() * 0.065,
+                           rect.width() * 0.92, rect.height() * 0.865)
             reference = layout_page(
                 self.mushaf.page(3), self.fonts.measurer(3), inner.width(), inner.height(), 20
             )[1]
@@ -163,12 +175,29 @@ class PageCanvas(QWidget):
                 painter.setFont(font)
                 painter.setPen(TEXT_COLOR)
                 painter.drawText(QPointF(x, y + item.height / 2 + shift), item.cell.text)
+            self._paint_page_header(painter, page, rect)
             painter.setFont(QFont("sans-serif", 9))
             painter.setPen(QColor("#666666"))
             painter.drawText(
                 QRectF(rect.x(), rect.bottom() - rect.height() * 0.05, rect.width(), rect.height() * 0.05),
-                Qt.AlignmentFlag.AlignCenter, format_number(page),
+                Qt.AlignmentFlag.AlignCenter, format_number(page, self._digits),
             )
+
+    def _paint_page_header(self, painter, page, rect):
+        header = header_for(self.mushaf.page_info(page), self.mushaf.chapter_name(
+            self.mushaf.page_info(page).chapter), self.number_style)
+        font = QFont(self.fonts.text_family or "serif")
+        font.setPixelSize(max(8, round(rect.height() * 0.026)))
+        painter.setFont(font)
+        painter.setPen(TEXT_COLOR)
+        strip = QRectF(rect.x() + rect.width() * 0.04, rect.y() + rect.height() * 0.012,
+                       rect.width() * 0.92, rect.height() * 0.042)
+        painter.drawText(strip, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, header.right)
+        # name first, so the number lands to its left in a right-to-left line
+        painter.drawText(strip, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                         f"{header.chapter_name} {header.chapter_number}")
+        painter.setPen(QPen(FRAME_COLOR, 1))
+        painter.drawLine(QPointF(strip.left(), strip.bottom() + 2), QPointF(strip.right(), strip.bottom() + 2))
 
     def _paint_header(self, painter, item, x, y, size):
         font = QFont(self.fonts.text_family or "serif")
@@ -211,7 +240,7 @@ class PageCanvas(QWidget):
                 self.update()
 
     def selected_text(self):
-        return self.mushaf.text_between(*self.selection) if self.selection else ""
+        return self.mushaf.text_between(*self.selection, digits=self._digits) if self.selection else ""
 
     def copy(self):
         text = self.selected_text()
@@ -271,6 +300,8 @@ class ReaderWindow(QMainWindow):
         elif ctrl and key == Qt.Key.Key_2:
             self.spread = not self.spread
             self.refresh()
+        elif ctrl and key == Qt.Key.Key_D:
+            self.canvas.set_number_style(next_style(self.canvas.number_style))
         elif event.matches(QKeySequence.StandardKey.Copy):
             self.canvas.copy()
         elif ctrl and key == Qt.Key.Key_Q:
