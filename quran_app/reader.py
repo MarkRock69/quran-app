@@ -20,11 +20,14 @@ from pathlib import Path
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QAction, QColor, QFont, QFontDatabase, QFontMetricsF, QGuiApplication, QKeySequence,
-    QPainter, QPen,
+    QPainter, QPainterPath, QPen,
 )
 from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QWidget
 
-from .banner import BANNER_FRAME, BASMALA, SURAH_WORD, chapter_name_glyph
+from .banner import (
+    BANNER_FRAME, BASMALA, OVAL_HEIGHT, OVAL_LEFT, OVAL_RIGHT, SURAH_WORD, chapter_name_glyph, plan_frame,
+    stretch_x,
+)
 from .mushaf import PAGE_COUNT, Mushaf, hit_test, layout_page, spread_of
 from .numbers import format_number, next_style
 from .page_header import header_for
@@ -214,12 +217,50 @@ class PageCanvas(QWidget):
             self._draw_fitted(painter, font, BASMALA, box.adjusted(box.width() * 0.2, box.height() * 0.05,
                                                                     -box.width() * 0.2, -box.height() * 0.05))
             return
-        frame = self._draw_fitted(painter, font, BANNER_FRAME,
-                                  box.adjusted(0, box.height() * 0.04, 0, -box.height() * 0.04), FRAME_COLOR)
+        oval = self._draw_frame(painter, font, box.adjusted(0, box.height() * 0.04, 0, -box.height() * 0.04))
         # the oval in the middle of the frame holds "سورة" and the name
-        oval = QRectF(0, 0, frame.width() * 0.40, frame.height() * 0.58)
-        oval.moveCenter(QPointF(frame.x() + frame.width() * 0.4865, frame.center().y()))
         self._draw_name(painter, font, chapter_name_glyph(item.line.chapter), oval)
+
+    def _draw_frame(self, painter, font, box):
+        """Draw the banner frame across the whole box, stretched in the middle. Returns the oval's rectangle."""
+        path = QPainterPath()
+        path.addText(0, 0, font, BANNER_FRAME)
+        ink = path.boundingRect()
+        scale, extra = plan_frame(ink.width(), ink.height(), box.width(), box.height())
+        cut = ink.center().x()
+        stretched = QPainterPath()
+        stretched.setFillRule(Qt.FillRule.WindingFill)
+        count, i = path.elementCount(), 0
+
+        def point(element):
+            return stretch_x(element.x, cut, extra), element.y
+
+        while i < count:
+            element = path.elementAt(i)
+            if element.isMoveTo():
+                stretched.moveTo(*point(element))
+                i += 1
+            elif element.isLineTo():
+                stretched.lineTo(*point(element))
+                i += 1
+            else:  # a curve: this element and the next two
+                stretched.cubicTo(*point(element), *point(path.elementAt(i + 1)), *point(path.elementAt(i + 2)))
+                i += 3
+        width, height = (ink.width() + extra) * scale, ink.height() * scale
+        left, top = box.center().x() - width / 2, box.center().y() - height / 2
+        painter.save()
+        painter.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+        painter.translate(left - ink.x() * scale, top - ink.y() * scale)
+        painter.scale(scale, scale)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(FRAME_COLOR)
+        painter.drawPath(stretched)
+        painter.restore()
+        oval_left = left + ink.width() * OVAL_LEFT * scale
+        oval_right = left + (ink.width() * OVAL_RIGHT + extra) * scale
+        oval = QRectF(0, 0, (oval_right - oval_left) * 0.89, height * OVAL_HEIGHT)
+        oval.moveCenter(QPointF((oval_left + oval_right) / 2, top + height / 2))
+        return oval
 
     @staticmethod
     def _ink(font, text):

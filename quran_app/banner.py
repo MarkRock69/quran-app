@@ -20,3 +20,30 @@ def chapter_name_glyph(chapter):
     if not 1 <= chapter <= 114:
         raise ValueError(f"no chapter {chapter}")
     return chr(CHAPTER_NAME_CODES[chapter - 1])
+
+
+# --- a frame of any width -------------------------------------------------------
+#
+# The frame is stretched without distorting its ornaments: everything to the right
+# of the frame's middle line moves right by the extra width. Only straight lines
+# cross that line (the borders and the top and bottom of the oval), so they just
+# get longer, and the ornaments and circles at the ends keep their shape.
+
+# Where the oval in the middle of the frame is, as fractions of the frame's own width and height.
+OVAL_LEFT = 0.262
+OVAL_RIGHT = 0.711
+OVAL_HEIGHT = 0.58
+
+
+def plan_frame(ink_width, ink_height, box_width, box_height):
+    """How to fit the frame in a box: (scale, extra), extra being the width to add in the middle,
+    in the frame's own units. The frame is as tall as the box allows; if that leaves it narrower than the box
+    it is stretched in the middle, and if it would be wider (a narrow page) it is shrunk instead."""
+    scale = min(box_height / ink_height, box_width / ink_width)
+    extra = max(0.0, box_width / scale - ink_width)
+    return scale, extra
+
+
+def stretch_x(x, cut, extra):
+    """Where a point at x goes when `extra` is inserted at x = cut."""
+    return x + extra if x > cut else x
