@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Optional
 
+from .index_lists import chapter_index, rub_index
 from .navigation import KINDS, Jump, parse_jump
 from .numbers import format_number
 from .page_header import PageInfo, rub_progress
@@ -124,6 +125,14 @@ class Mushaf:
         ).fetchone()
         progress = rub_progress(*rub) if rub else None
         return PageInfo(juz, first.chapter, *(progress or (None, None)))
+
+    def chapter_index(self):
+        """Bands and rows of the chapter list (see index_lists.py)."""
+        return chapter_index(self._connection)
+
+    def rub_index(self):
+        """Bands and rows of the rub' list (see index_lists.py)."""
+        return rub_index(self._connection)
 
     def jump(self, kind, text):
         """Where typed text leads: a `Jump` (page, and the verse if one was asked for).

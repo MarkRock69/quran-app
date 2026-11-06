@@ -12,7 +12,7 @@ Planned stack: Python + Qt (PySide6, Qt Quick) with SQLite. Code uses the word
 1. **Data** (done): text, search copy, chapter/juz'/rub'/page tables, tafsir
 2. **Search engine** (done): `quran_app/search.py`
 3. **Mushaf page view** (page model done and tested; the Qt window is written but not yet run, see below)
-4. Navigation: jump box, search panel and bookmarks (written, first run pending); lists of chapters, juz' and rub' still to do
+4. Navigation: jump box, search panel, bookmarks, chapter list and rub' list (written, first run pending)
 5. Tafsir side panel with vertical tabs
 6. Audio, with a selectable passage
 7. Themes (light, dark) and the Arabic-Indic / Western digit toggle
@@ -110,7 +110,10 @@ names and the basmala are glyphs of the King Fahd font QCF2BSML.ttf (rerun
 `tools/fetch_fonts.py` once to get it; it skips what you already have). The ☰ button in the top corner opens the side panel, which has everything below
 as tabs (search, go to, bookmarks, view: one or two pages and the number style),
 so the keyboard is never required. Ctrl+G = go to a page, chapter, juz', hizb or rub' by number, or a verse as `2:255`
-(either digit style). Ctrl+F opens the side panel with search as you type: choose a
+(either digit style). Ctrl+I opens the chapter list (juz' bands, page, Meccan or Medinan, verse count)
+and the rub' list (circle showing how much of the hizb has passed, opening words,
+chapter and verse, page), laid out like the Quran Android app; choosing a row goes
+to its page. Ctrl+F opens the side panel with search as you type: choose a
 result to open its page with the verse selected; Esc closes the panel. Ctrl+B
 bookmarks the page (a red ribbon shows; the list is the panel's second tab, Delete
 removes one); bookmarks are kept in `~/.local/share/quran-app/user.db`.

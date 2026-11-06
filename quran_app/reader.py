@@ -2,7 +2,7 @@
 
     python3 -m quran_app.reader [--page 42] [--spread]
 
-Keys:  Ctrl+G = go to (page, chapter, juz', hizb, rub' or verse 2:255),  Ctrl+F = search,
+Keys:  Ctrl+G = go to (page, chapter, juz', hizb, rub' or verse 2:255),  Ctrl+F = search,  Ctrl+I = the chapter and rub' lists,
        The ☰ button (top corner) opens the side panel, which has all of these as tabs.
        Ctrl+B = bookmark this page (the list is the second tab of the side panel),
        Left / PageDown / scroll down = next page,  Right / PageUp / scroll up = previous,
@@ -36,7 +36,7 @@ from .bookmarks import DEFAULT_PATH, Bookmarks
 from .mushaf import PAGE_COUNT, Mushaf, hit_test, layout_page, spread_of
 from .numbers import format_number, next_style
 from .page_header import header_for
-from .panels import BookmarksPanel, JumpPanel, SearchPanel, SidePanel, ViewPanel
+from .panels import BookmarksPanel, IndexPanel, JumpPanel, SearchPanel, SidePanel, ViewPanel
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE_ASPECT = 0.70  # width / height of one page
@@ -393,10 +393,12 @@ class ReaderWindow(QMainWindow):
         digits = lambda: self.canvas.digits  # noqa: E731
         self.search = SearchPanel(database_path, fonts.text_family, digits)
         self.jump = JumpPanel(mushaf)
+        self.index = IndexPanel(mushaf, fonts.text_family, digits)
         self.marks = BookmarksPanel(bookmarks, mushaf, digits)
         self.view = ViewPanel(spread, self.canvas.number_style)
         self.search.chosen.connect(self.show_verse)
         self.jump.jumped.connect(self.on_jump)
+        self.index.chosen.connect(self.go_to)
         self.marks.chosen.connect(self.go_to)
         self.marks.toggle_here.connect(self.toggle_bookmark)
         self.marks.removed_page.connect(lambda _: self.canvas.update())
@@ -404,12 +406,12 @@ class ReaderWindow(QMainWindow):
         self.view.style_changed.connect(self.set_number_style)
         self.canvas.menu_clicked.connect(self.toggle_side)
         self.side = QDockWidget("القائمة", self)
-        self.side.setWidget(SidePanel(self.search, self.jump, self.marks, self.view))
+        self.side.setWidget(SidePanel(self.search, self.jump, self.index, self.marks, self.view))
         self.side.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.side)
-        self.side.setMinimumWidth(380)
+        self.side.setMinimumWidth(440)
         self.side.hide()
-        for keys, action in (("Ctrl+G", self.open_jump), ("Ctrl+F", self.open_search), ("Ctrl+B", self.toggle_bookmark),
+        for keys, action in (("Ctrl+G", self.open_jump), ("Ctrl+F", self.open_search), ("Ctrl+B", self.toggle_bookmark), ("Ctrl+I", self.open_index),
                               ("Escape", self.close_side)):
             QShortcut(QKeySequence(keys), self, activated=action)
         self.canvas.add_menu_button()
@@ -449,6 +451,7 @@ class ReaderWindow(QMainWindow):
         self.canvas.set_number_style(style)
         self.view.show_state(self.spread, style)
         self.search.refresh_numbers()
+        self.index.refresh()
         self.marks.refresh()
 
     def on_jump(self, target):
@@ -468,6 +471,10 @@ class ReaderWindow(QMainWindow):
         self.side.show()
         self.side.widget().setCurrentWidget(self.jump)
         self.jump.focus()
+
+    def open_index(self):
+        self.side.show()
+        self.side.widget().setCurrentWidget(self.index)
 
     def open_search(self):
         self.side.show()

@@ -3,13 +3,14 @@ navigation.py and bookmarks.py, which are tested without a window."""
 
 from html import escape
 
-from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QGuiApplication, QTextDocument
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QTextDocument
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton,
     QRadioButton, QSpinBox, QStyle, QStyledItemDelegate, QTabWidget, QVBoxLayout, QHBoxLayout, QWidget,
 )
 
+from .index_lists import Band, ChapterRow, RubRow, revelation_text, verse_count_text
 from .navigation import HINT, KINDS
 from .numbers import format_number
 from .page_header import header_for
@@ -174,6 +175,137 @@ class SearchPanel(QWidget):
             self._open(self.results.item(0))
 
 
+BAND_COLOR = QColor("#e3dcc7")
+ROW_COLOR = QColor("#fbf8ee")
+DEEP_GREEN = QColor("#2f6b57")
+PALE_GREEN = QColor("#cfe3dc")
+INK = QColor("#111111")
+MUTED = QColor("#6b6b6b")
+
+
+class IndexDelegate(QStyledItemDelegate):
+    """Draws the rows of the chapter list and the rub' list like the Quran Android app:
+    juz' bands, then rows with the page number at the left end."""
+
+    BAND_HEIGHT, CHAPTER_HEIGHT, RUB_HEIGHT = 44, 78, 84
+
+    def __init__(self, view, family, digits):
+        super().__init__(view)
+        self._family, self._digits = family, digits
+
+    def sizeHint(self, option, index):
+        row = index.data(HTML_ROLE)
+        height = {Band: self.BAND_HEIGHT, ChapterRow: self.CHAPTER_HEIGHT, RubRow: self.RUB_HEIGHT}[type(row)]
+        return QSize(option.rect.width(), height)
+
+    def _font(self, pixels, bold=False, text=True):
+        font = QFont(self._family if text and self._family else "sans-serif")
+        font.setPixelSize(pixels)
+        font.setBold(bold)
+        return font
+
+    def paint(self, painter, option, index):
+        row, rect = index.data(HTML_ROLE), QRectF(option.rect)
+        digits = self._digits()
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        painter.fillRect(rect, BAND_COLOR if isinstance(row, Band) else ROW_COLOR)
+        if selected:
+            painter.fillRect(rect, QColor(70, 130, 220, 50))
+        right, left = rect.right() - 16, rect.left() + 16
+        number = lambda n: format_number(n, digits)  # noqa: E731
+        page = row.page
+        painter.setPen(MUTED)
+        painter.setFont(self._font(16, text=False))
+        painter.drawText(QRectF(left, rect.top(), 70, rect.height()),
+                         Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignAbsolute | Qt.AlignmentFlag.AlignVCenter,
+                         number(page))
+        if isinstance(row, Band):
+            painter.setPen(INK)
+            painter.setFont(self._font(20, bold=True))
+            self._text(painter, QRectF(left + 80, rect.top(), right - left - 80, rect.height()),
+                       f"الجزء {number(row.juz)}")
+        elif isinstance(row, ChapterRow):
+            painter.setPen(MUTED)
+            painter.setFont(self._font(34, text=False))
+            self._text(painter, QRectF(right - 56, rect.top(), 56, rect.height()), number(row.chapter))
+            body = QRectF(left + 80, rect.top(), right - 70 - left - 80, rect.height())
+            self._two_lines(painter, body, f"سُورَةُ {row.name}",
+                            f"{revelation_text(row.meccan)} - {verse_count_text(row.verse_count, digits)}")
+        else:
+            self._pie(painter, QRectF(right - 54, rect.center().y() - 27, 54, 54), row, digits)
+            body = QRectF(left + 80, rect.top(), right - 70 - left - 80, rect.height())
+            self._two_lines(painter, body, row.text,
+                            f"سُورَةُ {row.chapter_name}، آية {number(row.verse)}")
+        painter.restore()
+
+    def _text(self, painter, rect, text):
+        text = painter.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, int(rect.width()))
+        painter.drawText(rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute
+                         | Qt.AlignmentFlag.AlignVCenter, text)
+
+    def _two_lines(self, painter, body, first, second):
+        half = body.height() / 2
+        painter.setPen(INK)
+        painter.setFont(self._font(21, bold=True))
+        self._text(painter, QRectF(body.left(), body.top() + 6, body.width(), half - 2), first)
+        painter.setPen(MUTED)
+        painter.setFont(self._font(17))
+        self._text(painter, QRectF(body.left(), body.center().y() - 2, body.width(), half - 2), second)
+
+    def _pie(self, painter, rect, row, digits):
+        """A full circle with the hizb number at the start of a hizb; otherwise the quarters gone by."""
+        painter.setPen(Qt.PenStyle.NoPen)
+        if row.position == 1:
+            painter.setBrush(DEEP_GREEN)
+            painter.drawEllipse(rect)
+            painter.setPen(QColor("white"))
+            painter.setFont(self._font(20, text=False))
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, format_number(row.hizb, digits))
+            return
+        painter.setBrush(PALE_GREEN)
+        painter.drawEllipse(rect)
+        painter.setBrush(DEEP_GREEN)
+        painter.drawPie(rect, 90 * 16, -(row.position - 1) * 90 * 16)  # clockwise from twelve o'clock
+
+
+class IndexList(QListWidget):
+    """One of the two lists. Choosing a row asks for its page."""
+
+    chosen = Signal(int)
+
+    def __init__(self, family, digits, rows):
+        super().__init__()
+        self.setItemDelegate(IndexDelegate(self, family, digits))
+        self.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+        for row in rows:
+            item = QListWidgetItem()
+            item.setData(HTML_ROLE, row)
+            self.addItem(item)
+        self.itemClicked.connect(lambda item: self.chosen.emit(item.data(HTML_ROLE).page))
+        self.itemActivated.connect(lambda item: self.chosen.emit(item.data(HTML_ROLE).page))
+
+
+class IndexPanel(QTabWidget):
+    """The chapter list and the rub' list."""
+
+    chosen = Signal(int)  # page
+
+    def __init__(self, mushaf, family, digits):
+        super().__init__()
+        self.chapters = IndexList(family, digits, mushaf.chapter_index())
+        self.rubs = IndexList(family, digits, mushaf.rub_index())
+        for view in (self.chapters, self.rubs):
+            view.chosen.connect(self.chosen)
+        self.addTab(self.chapters, "السور")
+        self.addTab(self.rubs, "الأرباع")
+
+    def refresh(self):
+        self.chapters.viewport().update()
+        self.rubs.viewport().update()
+
+
 class _PageList(QListWidget):
     """A list of bookmarked pages; Delete removes the selected one."""
 
@@ -314,10 +446,11 @@ class ViewPanel(QWidget):
 class SidePanel(QTabWidget):
     """Everything the reader can do besides turning pages, in one place."""
 
-    def __init__(self, search, jump, bookmarks, view):
+    def __init__(self, search, jump, index, bookmarks, view):
         super().__init__()
-        self.search, self.jump, self.bookmarks, self.view = search, jump, bookmarks, view
+        self.search, self.jump, self.index, self.bookmarks, self.view = search, jump, index, bookmarks, view
         self.addTab(search, "بحث")
         self.addTab(jump, "اذهب إلى")
+        self.addTab(index, "الفهرس")
         self.addTab(bookmarks, "العلامات")
         self.addTab(view, "العرض")
