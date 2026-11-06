@@ -228,6 +228,9 @@ class PageCanvas(QWidget):
     def _draw_ink(self, painter, font, text, ink_x, baseline, scale, color):
         """Draw `text` so that its ink starts at ink_x, scaled, on the given baseline."""
         painter.save()
+        # Left to right, so that the bidi algorithm does not mirror a bracket-like code of the banner
+        # font: Al-Fatiha is "]" in it, and would be drawn as "[" (an ornament) in a right-to-left window.
+        painter.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
         painter.translate(ink_x - self._ink(font, text).x() * scale, baseline)
         painter.scale(scale, scale)
         painter.setFont(font)
