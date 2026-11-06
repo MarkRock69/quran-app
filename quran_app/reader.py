@@ -3,6 +3,7 @@
     python3 -m quran_app.reader [--page 42] [--spread]
 
 Keys:  Ctrl+G = go to (page, chapter, juz', hizb, rub' or verse 2:255),  Ctrl+F = search,
+       The ☰ button (top corner) opens a menu with all of these.
        Ctrl+B = bookmark this page (the list is the second tab of the side panel),
        Left / PageDown / scroll down = next page,  Right / PageUp / scroll up = previous,
        Ctrl+2 = switch between one page and two,
@@ -25,7 +26,7 @@ from PySide6.QtGui import (
     QAction, QColor, QFont, QFontDatabase, QFontMetricsF, QGuiApplication, QKeySequence,
     QPainter, QPainterPath, QPen,
 )
-from PySide6.QtWidgets import QApplication, QDockWidget, QMainWindow, QMenu, QWidget
+from PySide6.QtWidgets import QApplication, QDockWidget, QMainWindow, QMenu, QToolButton, QWidget
 
 from .banner import (
     BANNER_FRAME, BASMALA, OVAL_HEIGHT, OVAL_LEFT, OVAL_RIGHT, SURAH_WORD, chapter_name_glyph, plan_frame,
@@ -99,6 +100,7 @@ class PageCanvas(QWidget):
         self._wheel = 0
         self.number_style = "indic"  # 'indic', 'western' or 'words'
         self.bookmarks = None
+        self._menu_button = None
         self.mushaf = mushaf
         self.fonts = fonts
         self.pages = []  # pages shown, right to left
@@ -122,7 +124,27 @@ class PageCanvas(QWidget):
     def digits(self):
         return "western" if self.number_style == "western" else "indic"
 
+    def set_menu(self, menu):
+        """A hamburger button in the top corner that opens `menu`."""
+        button = QToolButton(self)
+        button.setText("\u2630")
+        button.setMenu(menu)
+        button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        button.setAutoRaise(True)
+        button.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # the arrow keys keep turning pages
+        button.setFixedSize(40, 36)
+        button.setStyleSheet("QToolButton { font-size: 24px; color: #444; border: none; }"
+                             "QToolButton::menu-indicator { image: none; }")
+        self._menu_button = button
+        self._place_menu_button()
+
+    def _place_menu_button(self):
+        if self._menu_button is not None:
+            self._menu_button.move(self.width() - self._menu_button.width() - 8, 6)
+            self._menu_button.raise_()
+
     def resizeEvent(self, event):
+        self._place_menu_button()
         self._layouts.clear()
         super().resizeEvent(event)
 
@@ -383,6 +405,7 @@ class ReaderWindow(QMainWindow):
         for keys, action in (("Ctrl+G", self.open_jump), ("Ctrl+F", self.open_search), ("Ctrl+B", self.toggle_bookmark),
                               ("Escape", self.close_side)):
             QShortcut(QKeySequence(keys), self, activated=action)
+        self.canvas.set_menu(self._build_menu())
         self.resize(1100, 800)
         self.refresh()
 
@@ -397,6 +420,37 @@ class ReaderWindow(QMainWindow):
     def go_to(self, page):
         self.page = min(PAGE_COUNT, max(1, page))
         self.refresh()
+
+    def _build_menu(self):
+        menu = QMenu(self)
+        for label, action in (
+            ("بحث\tCtrl+F", self.open_search),
+            ("العلامات", self.open_bookmarks),
+            ("اذهب إلى…\tCtrl+G", self.open_jump),
+            ("إضافة أو إزالة علامة\tCtrl+B", self.toggle_bookmark),
+            (None, None),
+            ("صفحة واحدة أو صفحتان\tCtrl+2", self.toggle_spread),
+            ("الأرقام: هندية، غربية، كلمات\tCtrl+D", self.cycle_numbers),
+        ):
+            if label is None:
+                menu.addSeparator()
+            else:
+                menu.addAction(label, action)
+        return menu
+
+    def open_bookmarks(self):
+        self.side.show()
+        self.side.widget().setCurrentWidget(self.marks)
+        self.marks.setFocus()
+
+    def toggle_spread(self):
+        self.spread = not self.spread
+        self.refresh()
+
+    def cycle_numbers(self):
+        self.canvas.set_number_style(next_style(self.canvas.number_style))
+        self.search.refresh_numbers()
+        self.marks.refresh()
 
     def show_verse(self, chapter, number):
         """Open the page of a verse and select it."""
@@ -446,10 +500,9 @@ class ReaderWindow(QMainWindow):
         elif key == Qt.Key.Key_End:
             self.go_to(PAGE_COUNT)
         elif ctrl and key == Qt.Key.Key_2:
-            self.spread = not self.spread
-            self.refresh()
+            self.toggle_spread()
         elif ctrl and key == Qt.Key.Key_D:
-            self.canvas.set_number_style(next_style(self.canvas.number_style))
+            self.cycle_numbers()
         elif event.matches(QKeySequence.StandardKey.Copy):
             self.canvas.copy()
         elif ctrl and key == Qt.Key.Key_Q:
