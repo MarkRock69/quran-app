@@ -24,6 +24,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QWidget
 
+from .banner import BANNER_FRAME, BASMALA, SURAH_WORD, chapter_name_glyph
 from .mushaf import PAGE_COUNT, Mushaf, hit_test, layout_page, spread_of
 from .numbers import format_number, next_style
 from .page_header import header_for
@@ -33,9 +34,7 @@ PAGE_ASPECT = 0.70  # width / height of one page
 PAGE_BACKGROUND = QColor("#fbf8ee")
 TEXT_COLOR = QColor("#111111")
 SELECTION_COLOR = QColor(70, 130, 220, 90)
-FRAME_COLOR = QColor("#8a6d2b")
-NAME_BACKGROUND = QColor("#efe6c8")
-BASMALA = "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ"
+FRAME_COLOR = QColor("#2f6b57")
 MEASURE_SIZE = 1000  # measure glyphs at a large size, then divide
 
 
@@ -49,6 +48,13 @@ class Fonts:
         name_font = self.folder / "UthmanTN1.otf"
         if name_font.exists():
             self.text_family = self._load(name_font)
+        self.banner_family = self._load(self.folder / "QCF2BSML.ttf")
+
+    def banner_font(self):
+        font = QFont(self.banner_family or "serif")
+        font.setPixelSize(100)  # the painter scales it
+        font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        return font
 
     @staticmethod
     def _load(path):
@@ -192,29 +198,64 @@ class PageCanvas(QWidget):
         painter.setPen(TEXT_COLOR)
         strip = QRectF(rect.x() + rect.width() * 0.04, rect.y() + rect.height() * 0.012,
                        rect.width() * 0.92, rect.height() * 0.042)
-        painter.drawText(strip, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, header.right)
+        painter.drawText(strip, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute | Qt.AlignmentFlag.AlignVCenter,
+                         header.right)
         # name first, so the number lands to its left in a right-to-left line
-        painter.drawText(strip, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+        painter.drawText(strip, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignAbsolute | Qt.AlignmentFlag.AlignVCenter,
                          f"{header.chapter_name} {header.chapter_number}")
         painter.setPen(QPen(FRAME_COLOR, 1))
         painter.drawLine(QPointF(strip.left(), strip.bottom() + 2), QPointF(strip.right(), strip.bottom() + 2))
 
     def _paint_header(self, painter, item, x, y, size):
-        font = QFont(self.fonts.text_family or "serif")
-        font.setPixelSize(max(1, round(size * 0.8)))
-        painter.setFont(font)
-        painter.setPen(TEXT_COLOR)
-        area = QRectF(x, y, item.width, item.height)
+        """The chapter banner (frame and calligraphic name) or the basmala, from the King Fahd font."""
+        box = QRectF(x, y, item.width, item.height)
+        font = self.fonts.banner_font()
         if item.line.kind == "basmala":
-            painter.drawText(area, Qt.AlignmentFlag.AlignCenter, BASMALA)
+            self._draw_fitted(painter, font, BASMALA, box.adjusted(box.width() * 0.2, box.height() * 0.05,
+                                                                    -box.width() * 0.2, -box.height() * 0.05))
             return
-        text = "سُورَةُ " + self.mushaf.chapter_name(item.line.chapter)
-        box = QRectF(x + item.width * 0.12, y + item.height * 0.1, item.width * 0.76, item.height * 0.8)
-        painter.setPen(QPen(FRAME_COLOR, 2))
-        painter.setBrush(NAME_BACKGROUND)
-        painter.drawRoundedRect(box, 6, 6)
-        painter.setPen(TEXT_COLOR)
-        painter.drawText(box, Qt.AlignmentFlag.AlignCenter, text)
+        frame = self._draw_fitted(painter, font, BANNER_FRAME,
+                                  box.adjusted(0, box.height() * 0.04, 0, -box.height() * 0.04), FRAME_COLOR)
+        # the oval in the middle of the frame holds "سورة" and the name
+        oval = QRectF(0, 0, frame.width() * 0.40, frame.height() * 0.58)
+        oval.moveCenter(QPointF(frame.x() + frame.width() * 0.4865, frame.center().y()))
+        self._draw_name(painter, font, chapter_name_glyph(item.line.chapter), oval)
+
+    @staticmethod
+    def _ink(font, text):
+        return QFontMetricsF(font).tightBoundingRect(text)
+
+    def _draw_ink(self, painter, font, text, ink_x, baseline, scale, color):
+        """Draw `text` so that its ink starts at ink_x, scaled, on the given baseline."""
+        painter.save()
+        painter.translate(ink_x - self._ink(font, text).x() * scale, baseline)
+        painter.scale(scale, scale)
+        painter.setFont(font)
+        painter.setPen(color)
+        painter.drawText(QPointF(0, 0), text)
+        painter.restore()
+
+    def _draw_fitted(self, painter, font, text, box, color=TEXT_COLOR):
+        """Draw `text` as large as fits in `box` (same proportions), centered. Returns where its ink went."""
+        ink = self._ink(font, text)
+        scale = min(box.width() / ink.width(), box.height() / ink.height())
+        target = QRectF(0, 0, ink.width() * scale, ink.height() * scale)
+        target.moveCenter(box.center())
+        self._draw_ink(painter, font, text, target.x(), target.y() - ink.y() * scale, scale, color)
+        return target
+
+    def _draw_name(self, painter, font, name, box):
+        word = self._ink(font, SURAH_WORD)
+        title = self._ink(font, name)
+        gap = 18  # at 100 px
+        top, bottom = min(word.top(), title.top()), max(word.bottom(), title.bottom())
+        total = word.width() + gap + title.width()
+        scale = min(box.width() / total, box.height() / (bottom - top))
+        right = box.center().x() + total * scale / 2
+        baseline = box.center().y() - (bottom - top) * scale / 2 - top * scale
+        self._draw_ink(painter, font, SURAH_WORD, right - word.width() * scale, baseline, scale, TEXT_COLOR)
+        self._draw_ink(painter, font, name, right - (word.width() + gap + title.width()) * scale, baseline,
+                       scale, TEXT_COLOR)
 
     # ------------------------------------------------------------ selection
 
@@ -319,8 +360,8 @@ def main():
     arguments = parser.parse_args()
     if not arguments.db.exists():
         sys.exit(f"{arguments.db} not found. Run: python3 tools/build_database.py")
-    if not (arguments.fonts / "QCF2001.ttf").exists():
-        sys.exit("Page fonts not found. Run: python3 tools/fetch_fonts.py")
+    if not all((arguments.fonts / name).exists() for name in ("QCF2001.ttf", "QCF2BSML.ttf")):
+        sys.exit("Fonts not found or incomplete. Run: python3 tools/fetch_fonts.py")
     application = QApplication(sys.argv[:1])
     application.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
     window = ReaderWindow(Mushaf(arguments.db), Fonts(arguments.fonts), arguments.page, arguments.spread)

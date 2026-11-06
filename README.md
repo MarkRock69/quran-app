@@ -105,7 +105,9 @@ to left like the printed Mushaf: 1 on the right and 2 on the left, then 3|4, and
 so on. Ctrl+D = cycle numbers: Arabic-Indic digits, Western digits, ordinal
 words (الأول). Each page has a heading: juz' (and, when a rub' starts on the page,
 how much of the hizb is done, e.g. `الجزء ١، ثلاثة أرباع الحزب ١`) on the right,
-chapter name and number on the left. Ctrl+C = copy the selection (real Uthmani text, with verse numbers in
+chapter name and number on the left. Chapter banners, the calligraphic chapter
+names and the basmala are glyphs of the King Fahd font QCF2BSML.ttf (rerun
+`tools/fetch_fonts.py` once to get it; it skips what you already have). Ctrl+C = copy the selection (real Uthmani text, with verse numbers in
 ornate brackets). The page fonts are drawn with the glyph codes in `glyphs`
 (QCF V2 fonts, plain, no tajweed colours). Stretching of word gaps to fill each
 line is done by the window, because these fonts leave it to the app.
