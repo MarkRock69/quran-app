@@ -45,13 +45,38 @@ class OrdinalTest(unittest.TestCase):
 
 class HeaderTest(unittest.TestCase):
     def test_rub_progress(self):
+        self.assertEqual(rub_progress(1, 2), (1, 1))
         self.assertEqual(rub_progress(1, 4), (1, 3))
         self.assertEqual(rub_progress(8, 2), (8, 1))
-        self.assertEqual(rub_progress(8, 1), (7, 4))
+        self.assertEqual(rub_progress(8, 1), (8, 0))
         self.assertIsNone(rub_progress(1, 1))
+
+    def test_the_agreed_first_sixteen_rub_pages(self):
+        expected = {
+            5: "الجزء ١، ربع الحزب ١", 7: "الجزء ١، نصف الحزب ١", 9: "الجزء ١، ثلاثة أرباع الحزب ١",
+            11: "الجزء ١، الحزب ٢", 14: "الجزء ١، ربع الحزب ٢", 17: "الجزء ١، نصف الحزب ٢",
+            19: "الجزء ١، ثلاثة أرباع الحزب ٢", 22: "الجزء ٢، الحزب ٣", 24: "الجزء ٢، ربع الحزب ٣",
+            27: "الجزء ٢، نصف الحزب ٣", 29: "الجزء ٢، ثلاثة أرباع الحزب ٣", 32: "الجزء ٢، الحزب ٤",
+            34: "الجزء ٢، ربع الحزب ٤", 37: "الجزء ٢، نصف الحزب ٤", 39: "الجزء ٢، ثلاثة أرباع الحزب ٤",
+            42: "الجزء ٣، الحزب ٥",
+        }
+        for page, text in expected.items():
+            self.assertEqual(header(page).right, text, page)
+
+    def test_page_1_shows_only_the_juz(self):
+        self.assertEqual(header(1).right, "الجزء ١")
+
+    def test_every_rub_start_page_but_the_first_has_a_rub_heading(self):
+        import sqlite3
+
+        pages = {r[0] for r in sqlite3.connect(database_path()).execute("SELECT start_page FROM rubs WHERE id > 1")}
+        self.assertEqual(len(pages), 239)  # no two rub's start on one page
+        for page in pages:
+            self.assertIsNotNone(mushaf.page_info(page).hizb, page)
 
     def test_page_9_three_quarters_of_hizb_1(self):
         self.assertEqual(header(9, "western").right, "الجزء 1، ثلاثة أرباع الحزب 1")
+        self.assertEqual(header(11, "words").right, "الجزء الأول، الحزب الثاني")
 
     def test_page_74_a_quarter_of_hizb_8(self):
         self.assertEqual(header(74, "western").right, "الجزء 4، ربع الحزب 8")
