@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Optional
 
+from .navigation import KINDS, Jump, parse_jump
 from .numbers import format_number
 from .page_header import PageInfo, rub_progress
 
@@ -123,6 +124,26 @@ class Mushaf:
         ).fetchone()
         progress = rub_progress(*rub) if rub else None
         return PageInfo(juz, first.chapter, *(progress or (None, None)))
+
+    def jump(self, kind, text):
+        """Where typed text leads: a `Jump` (page, and the verse if one was asked for).
+        `kind` is 'page', 'chapter', 'juz', 'hizb' or 'rub'. Raises ValueError, message in Arabic."""
+        kind, first, second = parse_jump(text, kind)
+        if kind == "verse":
+            (count,) = self._connection.execute("SELECT verse_count FROM chapters WHERE id = ?", (first,)).fetchone()
+            if not 1 <= second <= count:
+                raise ValueError(f"{self.chapter_name(first)}: الآيات من {format_number(1)} إلى {format_number(count)}")
+            return Jump(self.page_of_verse(first, second), (first, second))
+        if kind == "page":
+            return Jump(first, None)
+        table, key = {
+            "chapter": ("chapters", first),
+            "juz": ("juz", first),
+            "hizb": ("rubs", (first - 1) * 4 + 1),
+            "rub": ("rubs", first),
+        }[kind]
+        (page,) = self._connection.execute(f"SELECT start_page FROM {table} WHERE id = ?", (key,)).fetchone()
+        return Jump(page, None)
 
     def page_of_verse(self, chapter, number):
         row = self._connection.execute(

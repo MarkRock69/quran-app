@@ -2,7 +2,9 @@
 
     python3 -m quran_app.reader [--page 42] [--spread]
 
-Keys:  Left / PageDown / scroll down = next page,  Right / PageUp / scroll up = previous,
+Keys:  Ctrl+G = go to (page, chapter, juz', hizb, rub' or verse 2:255),  Ctrl+F = search,
+       Ctrl+B = bookmark this page (the list is the second tab of the side panel),
+       Left / PageDown / scroll down = next page,  Right / PageUp / scroll up = previous,
        Ctrl+2 = switch between one page and two,
        Ctrl+D = numbers as Arabic-Indic digits, Western digits, or ordinal words,  Ctrl+C = copy the selection,
        Home / End = first / last page,  Ctrl+Q = quit.
@@ -19,18 +21,21 @@ from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
+    QPolygonF, QShortcut,
     QAction, QColor, QFont, QFontDatabase, QFontMetricsF, QGuiApplication, QKeySequence,
     QPainter, QPainterPath, QPen,
 )
-from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QWidget
+from PySide6.QtWidgets import QApplication, QDockWidget, QMainWindow, QMenu, QWidget
 
 from .banner import (
     BANNER_FRAME, BASMALA, OVAL_HEIGHT, OVAL_LEFT, OVAL_RIGHT, SURAH_WORD, chapter_name_glyph, plan_frame,
     stretch_x,
 )
+from .bookmarks import DEFAULT_PATH, Bookmarks
 from .mushaf import PAGE_COUNT, Mushaf, hit_test, layout_page, spread_of
 from .numbers import format_number, next_style
 from .page_header import header_for
+from .panels import BookmarksPanel, JumpDialog, SearchPanel, SidePanel
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE_ASPECT = 0.70  # width / height of one page
@@ -93,6 +98,7 @@ class PageCanvas(QWidget):
         super().__init__()
         self._wheel = 0
         self.number_style = "indic"  # 'indic', 'western' or 'words'
+        self.bookmarks = None
         self.mushaf = mushaf
         self.fonts = fonts
         self.pages = []  # pages shown, right to left
@@ -113,7 +119,7 @@ class PageCanvas(QWidget):
         self.update()
 
     @property
-    def _digits(self):
+    def digits(self):
         return "western" if self.number_style == "western" else "indic"
 
     def resizeEvent(self, event):
@@ -185,12 +191,23 @@ class PageCanvas(QWidget):
                 painter.setPen(TEXT_COLOR)
                 painter.drawText(QPointF(x, y + item.height / 2 + shift), item.cell.text)
             self._paint_page_header(painter, page, rect)
+            if self.bookmarks is not None and self.bookmarks.has(page):
+                self._paint_ribbon(painter, rect)
             painter.setFont(QFont("sans-serif", 9))
             painter.setPen(QColor("#666666"))
             painter.drawText(
                 QRectF(rect.x(), rect.bottom() - rect.height() * 0.05, rect.width(), rect.height() * 0.05),
-                Qt.AlignmentFlag.AlignCenter, format_number(page, self._digits),
+                Qt.AlignmentFlag.AlignCenter, format_number(page, self.digits),
             )
+
+    @staticmethod
+    def _paint_ribbon(painter, rect):
+        """A small red ribbon at the top corner of a bookmarked page."""
+        x, y, w, h = rect.x() + rect.width() * 0.006, rect.y(), rect.width() * 0.028, rect.height() * 0.055
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#b3261e"))
+        painter.drawPolygon(QPolygonF([QPointF(x, y), QPointF(x + w, y), QPointF(x + w, y + h),
+                                       QPointF(x + w / 2, y + h * 0.78), QPointF(x, y + h)]))
 
     def _paint_page_header(self, painter, page, rect):
         header = header_for(self.mushaf.page_info(page), self.mushaf.chapter_name(
@@ -325,7 +342,7 @@ class PageCanvas(QWidget):
                 self.update()
 
     def selected_text(self):
-        return self.mushaf.text_between(*self.selection, digits=self._digits) if self.selection else ""
+        return self.mushaf.text_between(*self.selection, digits=self.digits) if self.selection else ""
 
     def copy(self):
         text = self.selected_text()
@@ -342,14 +359,30 @@ class PageCanvas(QWidget):
 
 
 class ReaderWindow(QMainWindow):
-    def __init__(self, mushaf, fonts, page, spread):
+    def __init__(self, mushaf, fonts, page, spread, database_path, bookmarks):
         super().__init__()
         self.setWindowTitle("القرآن الكريم")  # القرآن الكريم
+        self.mushaf, self.bookmarks = mushaf, bookmarks
         self.canvas = PageCanvas(mushaf, fonts)
+        self.canvas.bookmarks = bookmarks
         self.setCentralWidget(self.canvas)
         self.canvas.page_step.connect(self.step)
         self.page = page
         self.spread = spread
+        digits = lambda: self.canvas.digits  # noqa: E731
+        self.search = SearchPanel(database_path, fonts.text_family, digits)
+        self.marks = BookmarksPanel(bookmarks, mushaf, digits)
+        self.search.chosen.connect(self.show_verse)
+        self.marks.chosen.connect(self.go_to)
+        self.side = QDockWidget("البحث والعلامات", self)
+        self.side.setWidget(SidePanel(self.search, self.marks))
+        self.side.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.side)
+        self.side.setMinimumWidth(380)
+        self.side.hide()
+        for keys, action in (("Ctrl+G", self.open_jump), ("Ctrl+F", self.open_search), ("Ctrl+B", self.toggle_bookmark),
+                              ("Escape", self.close_side)):
+            QShortcut(QKeySequence(keys), self, activated=action)
         self.resize(1100, 800)
         self.refresh()
 
@@ -364,6 +397,36 @@ class ReaderWindow(QMainWindow):
     def go_to(self, page):
         self.page = min(PAGE_COUNT, max(1, page))
         self.refresh()
+
+    def show_verse(self, chapter, number):
+        """Open the page of a verse and select it."""
+        self.go_to(self.mushaf.page_of_verse(chapter, number))
+        self.canvas.selection = self.mushaf.verse_cells(chapter, number)
+        self.canvas.update()
+        self.canvas.setFocus()
+
+    def open_jump(self):
+        dialog = JumpDialog(self.mushaf, self)
+        if dialog.exec() and dialog.target is not None:
+            if dialog.target.verse:
+                self.show_verse(*dialog.target.verse)
+            else:
+                self.go_to(dialog.target.page)
+            self.canvas.setFocus()
+
+    def open_search(self):
+        self.side.show()
+        self.side.widget().setCurrentWidget(self.search)
+        self.search.focus()
+
+    def close_side(self):
+        self.side.hide()
+        self.canvas.setFocus()
+
+    def toggle_bookmark(self):
+        self.bookmarks.toggle(self.page)  # in two-page mode, the right-hand page
+        self.marks.refresh()
+        self.canvas.update()
 
     def step(self, direction):
         if self.spread:
@@ -400,6 +463,7 @@ def main():
     parser.add_argument("--db", type=Path, default=ROOT / "build" / "quran.db")
     parser.add_argument("--fonts", type=Path, default=ROOT / "data" / "fonts")
     parser.add_argument("--page", type=int, default=1)
+    parser.add_argument("--user-db", type=Path, default=DEFAULT_PATH, help="where bookmarks are kept")
     parser.add_argument("--spread", action="store_true", help="show two pages side by side")
     arguments = parser.parse_args()
     if not arguments.db.exists():
@@ -408,7 +472,8 @@ def main():
         sys.exit("Fonts not found or incomplete. Run: python3 tools/fetch_fonts.py")
     application = QApplication(sys.argv[:1])
     application.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
-    window = ReaderWindow(Mushaf(arguments.db), Fonts(arguments.fonts), arguments.page, arguments.spread)
+    window = ReaderWindow(Mushaf(arguments.db), Fonts(arguments.fonts), arguments.page, arguments.spread,
+                          arguments.db, Bookmarks(arguments.user_db))
     window.show()
     sys.exit(application.exec())
 

@@ -12,7 +12,7 @@ Planned stack: Python + Qt (PySide6, Qt Quick) with SQLite. Code uses the word
 1. **Data** (done): text, search copy, chapter/juz'/rub'/page tables, tafsir
 2. **Search engine** (done): `quran_app/search.py`
 3. **Mushaf page view** (page model done and tested; the Qt window is written but not yet run, see below)
-4. Navigation: lists, jump box, bookmarks, shortcuts
+4. Navigation: jump box, search panel and bookmarks (written, first run pending); lists of chapters, juz' and rub' still to do
 5. Tafsir side panel with vertical tabs
 6. Audio, with a selectable passage
 7. Themes (light, dark) and the Arabic-Indic / Western digit toggle
@@ -107,7 +107,12 @@ words (الأول). Each page has a heading: juz' (and, when a rub' starts on th
 how much of the hizb is done, e.g. `الجزء ١، ثلاثة أرباع الحزب ١`) on the right,
 chapter name and number on the left. Chapter banners, the calligraphic chapter
 names and the basmala are glyphs of the King Fahd font QCF2BSML.ttf (rerun
-`tools/fetch_fonts.py` once to get it; it skips what you already have). Ctrl+C = copy the selection (real Uthmani text, with verse numbers in
+`tools/fetch_fonts.py` once to get it; it skips what you already have). Ctrl+G = go to a page, chapter, juz', hizb or rub' by number, or a verse as `2:255`
+(either digit style). Ctrl+F opens the side panel with search as you type: choose a
+result to open its page with the verse selected; Esc closes the panel. Ctrl+B
+bookmarks the page (a red ribbon shows; the list is the panel's second tab, Delete
+removes one); bookmarks are kept in `~/.local/share/quran-app/user.db`.
+Ctrl+C = copy the selection (real Uthmani text, with verse numbers in
 ornate brackets). The page fonts are drawn with the glyph codes in `glyphs`
 (QCF V2 fonts, plain, no tajweed colours). Stretching of word gaps to fill each
 line is done by the window, because these fonts leave it to the app.
