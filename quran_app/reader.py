@@ -3,7 +3,7 @@
     python3 -m quran_app.reader [--page 42] [--spread]
 
 Keys:  Ctrl+G = go to (page, chapter, juz', hizb, rub' or verse 2:255),  Ctrl+F = search,
-       The ☰ button (top corner) opens a menu with all of these.
+       The ☰ button (top corner) opens the side panel, which has all of these as tabs.
        Ctrl+B = bookmark this page (the list is the second tab of the side panel),
        Left / PageDown / scroll down = next page,  Right / PageUp / scroll up = previous,
        Ctrl+2 = switch between one page and two,
@@ -36,7 +36,7 @@ from .bookmarks import DEFAULT_PATH, Bookmarks
 from .mushaf import PAGE_COUNT, Mushaf, hit_test, layout_page, spread_of
 from .numbers import format_number, next_style
 from .page_header import header_for
-from .panels import BookmarksPanel, JumpDialog, SearchPanel, SidePanel
+from .panels import BookmarksPanel, JumpPanel, SearchPanel, SidePanel, ViewPanel
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE_ASPECT = 0.70  # width / height of one page
@@ -94,6 +94,7 @@ WHEEL_STEP = 120  # one notch of a mouse wheel; touchpads send smaller amounts t
 
 class PageCanvas(QWidget):
     page_step = Signal(int)  # +1 = next page (or spread), -1 = previous
+    menu_clicked = Signal()
 
     def __init__(self, mushaf, fonts):
         super().__init__()
@@ -124,17 +125,15 @@ class PageCanvas(QWidget):
     def digits(self):
         return "western" if self.number_style == "western" else "indic"
 
-    def set_menu(self, menu):
-        """A hamburger button in the top corner that opens `menu`."""
+    def add_menu_button(self):
+        """A hamburger button in the top corner; it announces `menu_clicked`."""
         button = QToolButton(self)
         button.setText("\u2630")
-        button.setMenu(menu)
-        button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         button.setAutoRaise(True)
         button.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # the arrow keys keep turning pages
         button.setFixedSize(40, 36)
-        button.setStyleSheet("QToolButton { font-size: 24px; color: #444; border: none; }"
-                             "QToolButton::menu-indicator { image: none; }")
+        button.setStyleSheet("QToolButton { font-size: 24px; color: #444; border: none; }")
+        button.clicked.connect(self.menu_clicked)
         self._menu_button = button
         self._place_menu_button()
 
@@ -393,11 +392,19 @@ class ReaderWindow(QMainWindow):
         self.spread = spread
         digits = lambda: self.canvas.digits  # noqa: E731
         self.search = SearchPanel(database_path, fonts.text_family, digits)
+        self.jump = JumpPanel(mushaf)
         self.marks = BookmarksPanel(bookmarks, mushaf, digits)
+        self.view = ViewPanel(spread, self.canvas.number_style)
         self.search.chosen.connect(self.show_verse)
+        self.jump.jumped.connect(self.on_jump)
         self.marks.chosen.connect(self.go_to)
-        self.side = QDockWidget("البحث والعلامات", self)
-        self.side.setWidget(SidePanel(self.search, self.marks))
+        self.marks.toggle_here.connect(self.toggle_bookmark)
+        self.marks.removed_page.connect(lambda _: self.canvas.update())
+        self.view.spread_changed.connect(self.set_spread)
+        self.view.style_changed.connect(self.set_number_style)
+        self.canvas.menu_clicked.connect(self.toggle_side)
+        self.side = QDockWidget("القائمة", self)
+        self.side.setWidget(SidePanel(self.search, self.jump, self.marks, self.view))
         self.side.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.side)
         self.side.setMinimumWidth(380)
@@ -405,7 +412,7 @@ class ReaderWindow(QMainWindow):
         for keys, action in (("Ctrl+G", self.open_jump), ("Ctrl+F", self.open_search), ("Ctrl+B", self.toggle_bookmark),
                               ("Escape", self.close_side)):
             QShortcut(QKeySequence(keys), self, activated=action)
-        self.canvas.set_menu(self._build_menu())
+        self.canvas.add_menu_button()
         self.resize(1100, 800)
         self.refresh()
 
@@ -421,36 +428,34 @@ class ReaderWindow(QMainWindow):
         self.page = min(PAGE_COUNT, max(1, page))
         self.refresh()
 
-    def _build_menu(self):
-        menu = QMenu(self)
-        for label, action in (
-            ("بحث\tCtrl+F", self.open_search),
-            ("العلامات", self.open_bookmarks),
-            ("اذهب إلى…\tCtrl+G", self.open_jump),
-            ("إضافة أو إزالة علامة\tCtrl+B", self.toggle_bookmark),
-            (None, None),
-            ("صفحة واحدة أو صفحتان\tCtrl+2", self.toggle_spread),
-            ("الأرقام: هندية، غربية، كلمات\tCtrl+D", self.cycle_numbers),
-        ):
-            if label is None:
-                menu.addSeparator()
-            else:
-                menu.addAction(label, action)
-        return menu
-
-    def open_bookmarks(self):
-        self.side.show()
-        self.side.widget().setCurrentWidget(self.marks)
-        self.marks.setFocus()
+    def toggle_side(self):
+        if self.side.isVisible():
+            self.close_side()
+        else:
+            self.side.show()
 
     def toggle_spread(self):
-        self.spread = not self.spread
+        self.set_spread(not self.spread)
+
+    def set_spread(self, spread):
+        self.spread = spread
+        self.view.show_state(self.spread, self.canvas.number_style)
         self.refresh()
 
     def cycle_numbers(self):
-        self.canvas.set_number_style(next_style(self.canvas.number_style))
+        self.set_number_style(next_style(self.canvas.number_style))
+
+    def set_number_style(self, style):
+        self.canvas.set_number_style(style)
+        self.view.show_state(self.spread, style)
         self.search.refresh_numbers()
         self.marks.refresh()
+
+    def on_jump(self, target):
+        if target.verse:
+            self.show_verse(*target.verse)
+        else:
+            self.go_to(target.page)
 
     def show_verse(self, chapter, number):
         """Open the page of a verse and select it."""
@@ -460,13 +465,9 @@ class ReaderWindow(QMainWindow):
         self.canvas.setFocus()
 
     def open_jump(self):
-        dialog = JumpDialog(self.mushaf, self)
-        if dialog.exec() and dialog.target is not None:
-            if dialog.target.verse:
-                self.show_verse(*dialog.target.verse)
-            else:
-                self.go_to(dialog.target.page)
-            self.canvas.setFocus()
+        self.side.show()
+        self.side.widget().setCurrentWidget(self.jump)
+        self.jump.focus()
 
     def open_search(self):
         self.side.show()

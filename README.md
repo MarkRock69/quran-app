@@ -107,8 +107,9 @@ words (الأول). Each page has a heading: juz' (and, when a rub' starts on th
 how much of the hizb is done, e.g. `الجزء ١، ثلاثة أرباع الحزب ١`) on the right,
 chapter name and number on the left. Chapter banners, the calligraphic chapter
 names and the basmala are glyphs of the King Fahd font QCF2BSML.ttf (rerun
-`tools/fetch_fonts.py` once to get it; it skips what you already have). The ☰ button in the top corner opens a menu with everything below, so the
-keyboard is never required. Ctrl+G = go to a page, chapter, juz', hizb or rub' by number, or a verse as `2:255`
+`tools/fetch_fonts.py` once to get it; it skips what you already have). The ☰ button in the top corner opens the side panel, which has everything below
+as tabs (search, go to, bookmarks, view: one or two pages and the number style),
+so the keyboard is never required. Ctrl+G = go to a page, chapter, juz', hizb or rub' by number, or a verse as `2:255`
 (either digit style). Ctrl+F opens the side panel with search as you type: choose a
 result to open its page with the verse selected; Esc closes the panel. Ctrl+B
 bookmarks the page (a red ribbon shows; the list is the panel's second tab, Delete

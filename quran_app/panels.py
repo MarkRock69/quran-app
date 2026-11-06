@@ -1,4 +1,4 @@
-"""The side panel and the jump box: search, bookmarks, "go to". Qt only; the logic is in search.py,
+"""The side panel: search, go to, bookmarks, and how the book is shown. Qt only; the logic is in search.py,
 navigation.py and bookmarks.py, which are tested without a window."""
 
 from html import escape
@@ -6,8 +6,8 @@ from html import escape
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QTextDocument
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QSpinBox, QStyle, QStyledItemDelegate, QTabWidget, QVBoxLayout, QHBoxLayout, QWidget,
+    QButtonGroup, QCheckBox, QComboBox, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton,
+    QRadioButton, QSpinBox, QStyle, QStyledItemDelegate, QTabWidget, QVBoxLayout, QHBoxLayout, QWidget,
 )
 
 from .navigation import HINT, KINDS
@@ -174,21 +174,48 @@ class SearchPanel(QWidget):
             self._open(self.results.item(0))
 
 
-class BookmarksPanel(QListWidget):
-    """The bookmarked pages. Enter or a click goes there; Delete removes the bookmark."""
+class _PageList(QListWidget):
+    """A list of bookmarked pages; Delete removes the selected one."""
+
+    removed = Signal(int)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Delete and self.currentItem() is not None:
+            self.removed.emit(self.currentItem().data(TARGET_ROLE))
+        else:
+            super().keyPressEvent(event)
+
+
+class BookmarksPanel(QWidget):
+    """A button to bookmark (or unbookmark) the page being read, and the list of bookmarked pages."""
 
     chosen = Signal(int)  # page
+    toggle_here = Signal()
+    removed_page = Signal(int)
 
     def __init__(self, bookmarks, mushaf, digits):
         super().__init__()
         self._bookmarks, self._mushaf, self._digits = bookmarks, mushaf, digits
-        self.itemActivated.connect(lambda item: self.chosen.emit(item.data(TARGET_ROLE)))
-        self.itemClicked.connect(lambda item: self.chosen.emit(item.data(TARGET_ROLE)))
+        layout = QVBoxLayout(self)
+        button = QPushButton("إضافة علامة أو إزالتها في هذه الصفحة")
+        button.clicked.connect(self.toggle_here)
+        layout.addWidget(button)
+        self.list = _PageList()
+        self.list.itemActivated.connect(lambda item: self.chosen.emit(item.data(TARGET_ROLE)))
+        self.list.itemClicked.connect(lambda item: self.chosen.emit(item.data(TARGET_ROLE)))
+        self.list.removed.connect(self._remove)
+        layout.addWidget(self.list)
+        layout.addWidget(QLabel("زر Delete يحذف العلامة المحددة"))
         self.refresh()
+
+    def _remove(self, page):
+        self._bookmarks.remove(page)
+        self.refresh()
+        self.removed_page.emit(page)
 
     def refresh(self):
         digits = self._digits()
-        self.clear()
+        self.list.clear()
         for page in self._bookmarks.pages():
             info = self._mushaf.page_info(page)
             item = QListWidgetItem(
@@ -196,61 +223,101 @@ class BookmarksPanel(QListWidget):
                 f" — {header_for(info, '', digits).right.split('،')[0]}"
             )
             item.setData(TARGET_ROLE, page)
-            self.addItem(item)
-
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Delete and self.currentItem() is not None:
-            self._bookmarks.remove(self.currentItem().data(TARGET_ROLE))
-            self.refresh()
-        else:
-            super().keyPressEvent(event)
+            self.list.addItem(item)
 
 
-class SidePanel(QTabWidget):
-    def __init__(self, search, bookmarks):
-        super().__init__()
-        self.search, self.bookmarks = search, bookmarks
-        self.addTab(search, "بحث")
-        self.addTab(bookmarks, "العلامات")
-
-
-class JumpDialog(QDialog):
+class JumpPanel(QWidget):
     """Go to a page, chapter, juz', hizb or rub' by number, or to a verse as 2:255."""
 
-    last_kind = "page"
+    jumped = Signal(object)  # a navigation.Jump
 
-    def __init__(self, mushaf, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("اذهب إلى")
+    def __init__(self, mushaf):
+        super().__init__()
         self._mushaf = mushaf
-        self.target = None
         layout = QVBoxLayout(self)
         row = QHBoxLayout()
         self.kind = QComboBox()
         for key, (_, _, name) in KINDS.items():
             self.kind.addItem(name, key)
-        self.kind.setCurrentIndex(list(KINDS).index(JumpDialog.last_kind))
         self.edit = QLineEdit()
         self.edit.setPlaceholderText(HINT)
+        self.edit.returnPressed.connect(self.go)
         row.addWidget(self.kind)
         row.addWidget(self.edit, 1)
         layout.addLayout(row)
+        button = QPushButton("اذهب")
+        button.clicked.connect(self.go)
+        layout.addWidget(button)
         self.error = QLabel()
         self.error.setStyleSheet(f"color: {MATCH_COLOR}")
+        self.error.setWordWrap(True)
         layout.addWidget(self.error)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("اذهب")
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("إلغاء")
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-        self.resize(460, 120)
+        layout.addStretch()
 
-    def accept(self):
-        JumpDialog.last_kind = self.kind.currentData()
+    def focus(self):
+        self.edit.setFocus()
+        self.edit.selectAll()
+
+    def go(self):
         try:
-            self.target = self._mushaf.jump(self.kind.currentData(), self.edit.text())
+            target = self._mushaf.jump(self.kind.currentData(), self.edit.text())
         except ValueError as error:
             self.error.setText(str(error))
             return
-        super().accept()
+        self.error.setText("")
+        self.jumped.emit(target)
+
+
+class ViewPanel(QWidget):
+    """How the book is shown: one page or two, and how numbers are written."""
+
+    spread_changed = Signal(bool)
+    style_changed = Signal(str)
+
+    STYLES = (("indic", "أرقام هندية (١٢٣)"), ("western", "أرقام غربية (123)"), ("words", "كلمات (الأول)"))
+
+    def __init__(self, spread, style):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("العرض"))
+        self.pages = QButtonGroup(self)
+        self._page_buttons = {}
+        for value, label in ((False, "صفحة واحدة"), (True, "صفحتان")):
+            button = QRadioButton(label)
+            self._page_buttons[value] = button
+            self.pages.addButton(button)
+            button.toggled.connect(lambda checked, value=value: checked and self.spread_changed.emit(value))
+            layout.addWidget(button)
+        layout.addSpacing(16)
+        layout.addWidget(QLabel("الأرقام"))
+        self.numbers = QButtonGroup(self)
+        self._style_buttons = {}
+        for value, label in self.STYLES:
+            button = QRadioButton(label)
+            self._style_buttons[value] = button
+            self.numbers.addButton(button)
+            button.toggled.connect(lambda checked, value=value: checked and self.style_changed.emit(value))
+            layout.addWidget(button)
+        layout.addStretch()
+        self.show_state(spread, style)
+
+    def show_state(self, spread, style):
+        """Tick the buttons for the current state without announcing a change."""
+        for blocked in (*self._page_buttons.values(), *self._style_buttons.values()):
+            blocked.blockSignals(True)
+        self._page_buttons[bool(spread)].setChecked(True)
+        self._style_buttons[style].setChecked(True)
+        for blocked in (*self._page_buttons.values(), *self._style_buttons.values()):
+            blocked.blockSignals(False)
+
+
+class SidePanel(QTabWidget):
+    """Everything the reader can do besides turning pages, in one place."""
+
+    def __init__(self, search, jump, bookmarks, view):
+        super().__init__()
+        self.search, self.jump, self.bookmarks, self.view = search, jump, bookmarks, view
+        self.addTab(search, "بحث")
+        self.addTab(jump, "اذهب إلى")
+        self.addTab(bookmarks, "العلامات")
+        self.addTab(view, "العرض")
