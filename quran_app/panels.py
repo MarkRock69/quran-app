@@ -590,8 +590,8 @@ class AudioPanel(QWidget):
 
     def _set(self, kind, first, last=""):
         passage = self._mushaf.passage(kind, first, last)
-        self._set_start(*passage.first)
-        self._set_end(*passage.last)
+        self._set_start(*passage.verses[0])
+        self._set_end(*passage.verses[-1])
         self.status.setText("")
 
     def _selected_verse(self):
