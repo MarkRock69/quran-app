@@ -27,8 +27,8 @@ from PySide6.QtGui import (
     QPainter, QPainterPath, QPalette, QPen,
 )
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QDockWidget, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMenu, QPushButton,
-    QSizePolicy, QToolButton, QVBoxLayout, QWidget,
+    QApplication, QComboBox, QDockWidget, QGridLayout, QHBoxLayout, QLabel, QMainWindow, QMenu, QPushButton,
+    QSizePolicy, QSpinBox, QToolButton, QVBoxLayout, QWidget,
 )
 
 from .banner import (
@@ -43,7 +43,7 @@ from .paths import AUDIO_DIR, FONTS_DIR, ensure_database
 from .settings import Settings
 from .themes import DEFAULT_THEME, THEMES
 from .audio import Player
-from .audio_catalog import SPEED_MAX, SPEED_MIN, SPEED_PRESETS, parse_repeat, parse_speed, queue_range, range_text, speed_text
+from .audio_catalog import SPEED_PRESETS, parse_speed, queue_range, range_text, speed_text
 from .icons import SIZE, make_icon
 from .panels import (
     AudioPanel, BookmarksPanel, IndexPanel, JumpPanel, SearchPanel, ShortcutsPanel, SidePanel, TafsirPanel, ViewPanel,
@@ -593,20 +593,17 @@ class ReaderWindow(QMainWindow):
         self.speed_box.setToolTip("سرعة التشغيل (من 0.25 إلى 3)")
         for value in SPEED_PRESETS:
             self.speed_box.addItem(speed_text(value), value)
-        saved = self.settings.get("speed", 1.0)
-        self._speed = float(saved) if isinstance(saved, (int, float)) and SPEED_MIN <= saved <= SPEED_MAX else 1.0
+        self._speed = 1.0  # always starts at normal speed; not remembered
         self.speed_box.setCurrentText(speed_text(self._speed))
-        self.player.set_speed(self._speed)
         self.speed_box.activated.connect(lambda *_: self._speed_edited())
         self.speed_box.lineEdit().editingFinished.connect(self._speed_edited)
-        self.verse_times, self.passage_times = QLineEdit("1"), QLineEdit("1")
-        self._repeat_values = (1, 1)
+        self.verse_times, self.passage_times = QSpinBox(), QSpinBox()
         settings_row.addWidget(QLabel("السرعة"))
         settings_row.addWidget(self.speed_box)
         for label, edit in (("تكرار الآية", self.verse_times), ("تكرار المقطع", self.passage_times)):
-            edit.setMaximumWidth(44)
+            edit.setRange(1, self.audio.MAX_REPEATS)  # arrows, and the mouse wheel, change it
             edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            edit.editingFinished.connect(self._bar_repeats_edited)
+            edit.valueChanged.connect(self._bar_repeats_edited)
             settings_row.addWidget(QLabel(label))
             settings_row.addWidget(edit)
         # the range and what is playing go to the right of the controls, speed and repetitions to the left
@@ -643,23 +640,16 @@ class ReaderWindow(QMainWindow):
         if value != self._speed:
             self._speed = value
             self.player.set_speed(value)
-            self.settings.set("speed", value)
 
-    def _bar_repeats_edited(self):
-        try:
-            each, whole = parse_repeat(self.verse_times.text()), parse_repeat(self.passage_times.text())
-        except ValueError as error:
-            self.statusBar().showMessage(str(error), 3000)
-            self.verse_times.setText(str(self._repeat_values[0]))
-            self.passage_times.setText(str(self._repeat_values[1]))
-            return
-        self.audio.set_repeats(each, whole)  # which announces it back to _apply_repeats
+    def _bar_repeats_edited(self, *_):
+        self.audio.set_repeats(self.verse_times.value(), self.passage_times.value())  # announces back to _apply_repeats
 
     def _apply_repeats(self, each, whole):
         """New repetition counts (from the side panel or this bar): show them, and follow them while playing."""
-        self._repeat_values = (each, whole)
-        self.verse_times.setText(str(each))
-        self.passage_times.setText(str(whole))
+        for box, value in ((self.verse_times, each), (self.passage_times, whole)):
+            box.blockSignals(True)
+            box.setValue(value)
+            box.blockSignals(False)
         if self.player.active:
             queue = self.audio.rebuild(each, whole)
             if queue:

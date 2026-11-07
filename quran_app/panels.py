@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .audio_catalog import RECITERS, STYLE_NAMES, available, build_queue, parse_repeat
+from .audio_catalog import RECITERS, STYLE_NAMES, available, build_queue
 from .index_lists import Band, ChapterRow, RubRow, revelation_text, verse_count_text
 from .navigation import HINT, KINDS, normalize_digits
 from .passages import PASSAGE_KINDS
@@ -449,13 +449,11 @@ class AudioPanel(QWidget):
         self._fill_verses(self.to_verse, 1, 1)
 
         repeats = QHBoxLayout()
-        self.verse_repeats = QLineEdit("1")
-        self.passage_repeats = QLineEdit("1")
+        self.verse_repeats, self.passage_repeats = QSpinBox(), QSpinBox()
         for label, edit in (("تكرار كل آية", self.verse_repeats), ("تكرار المقطع", self.passage_repeats)):
-            edit.setMaximumWidth(60)
+            edit.setRange(1, self.MAX_REPEATS)  # arrows, and the mouse wheel, change it
             edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            edit.returnPressed.connect(self.play)
-            edit.editingFinished.connect(self._repeats_edited)
+            edit.valueChanged.connect(self._repeats_edited)
             repeats.addWidget(QLabel(label))
             repeats.addWidget(edit)
         repeats.addStretch()
@@ -626,30 +624,21 @@ class AudioPanel(QWidget):
 
     # ------------------------------------------------------------ playing
 
-    def _repeats(self, edit, what):
-        try:
-            return parse_repeat(edit.text(), self.MAX_REPEATS)
-        except ValueError:
-            self.status.setText(f"{what}: أدخل عدداً من ١ إلى {format_number(self.MAX_REPEATS, self._digits())}")
-            return None
-
     def repeats(self):
-        """(each verse, the whole passage) as set now, or None if either box holds something invalid."""
-        each = self._repeats(self.verse_repeats, "تكرار كل آية")
-        whole = self._repeats(self.passage_repeats, "تكرار المقطع") if each else None
-        return (each, whole) if each and whole else None
+        """(each verse, the whole passage) as set now."""
+        return self.verse_repeats.value(), self.passage_repeats.value()
 
     def set_repeats(self, each, whole):
-        """Show these counts (and announce them, so playback in progress follows)."""
-        self.verse_repeats.setText(str(each))
-        self.passage_repeats.setText(str(whole))
+        """Show these counts and announce them (once), so playback in progress follows."""
+        for box, value in ((self.verse_repeats, each), (self.passage_repeats, whole)):
+            box.blockSignals(True)
+            box.setValue(value)
+            box.blockSignals(False)
         self._repeats_edited()
 
-    def _repeats_edited(self):
-        values = self.repeats()
-        if values:
-            self.status.setText("")
-            self.repeats_changed.emit(*values)
+    def _repeats_edited(self, *_):
+        self.status.setText("")
+        self.repeats_changed.emit(*self.repeats())
 
     def rebuild(self, each, whole):
         """The queue of the last played passage with new repetition counts, or None (nothing played, or too big)."""
@@ -666,10 +655,7 @@ class AudioPanel(QWidget):
         if reciter is None or style is None:
             self.status.setText("لا توجد تسجيلات. شغّل: python3 tools/fetch_audio.py")
             return
-        values = self.repeats()
-        if not values:
-            return
-        each, whole = values
+        each, whole = self.repeats()
         (c1, v1), (c2, v2) = self._start(), self._end()
         try:
             passage = self._mushaf.passage("verse", f"{c1}:{v1}", f"{c2}:{v2}")
