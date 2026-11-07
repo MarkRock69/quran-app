@@ -1,11 +1,48 @@
 # quran-app
 
-A personal Qur'an reading app for one laptop (Ubuntu 24.04, Xorg). Arabic-only
-interface, Madani Mushaf pages, search that ignores diacritics, tafsir side
-panel, audio. Not for publication.
+A personal Qur'an reading app. Arabic-only interface, Madani Mushaf pages, search
+that ignores diacritics, tafsir side panel, audio. Not for publication.
 
-Planned stack: Python + Qt (PySide6, Qt Quick) with SQLite. Code uses the word
+Stack: Python + Qt (PySide6) with SQLite. Code uses the word
 **verse** (never "ayah"), and `verses` for the plural.
+
+## Which systems it runs on
+
+**Tested:** Ubuntu 24.04 on Xorg, and nothing else. That is the only place the app has ever been run.
+
+**Hypothetically:** any desktop operating system that PySide6 (Qt 6) supports (other Linux distributions,
+Ubuntu on Wayland, Windows 10/11, macOS), because the app is plain Python, SQLite and files, and all drawing,
+fonts, text direction and audio go through Qt. Nobody has tried it there, so treat it as unproven. What may go
+wrong or differ:
+
+- **Python and PySide6.** `pip install PySide6` needs a Python version PySide6 supports (roughly 3.9 to 3.13)
+  and a platform it publishes wheels for. Newer Debian and Ubuntu releases refuse system-wide `pip install`
+  and want a virtual environment (`python3 -m venv`). Very old distributions may have a C library that is too
+  old for the wheels.
+- **The menu entry.** `tools/install_launcher.py` writes a freedesktop `.desktop` file, which only exists on
+  Linux. Windows and macOS need their own shortcut or app bundle, and the dock or taskbar icon is arranged
+  differently there.
+- **Window name and icon.** The app names its window `quran-app` so the Ubuntu dock matches it to the menu
+  entry. That was fixed and checked on Xorg only. On Wayland it relies on `setDesktopFileName`, which should do
+  the same job but has not been seen working. Other desktops (KDE, XFCE, Windows, macOS) may show a generic icon.
+- **Where the data goes.** Everything lives in `~/.local/share/quran-app/` (set `QURAN_APP_DATA` to change it)
+  on every system, which is not where Windows or macOS programs usually keep data. It works, but expect the
+  folder in an unusual place.
+- **Audio.** Playback uses Qt Multimedia. Which codecs and backend it uses differs by system, so mp3 playback,
+  seeking and how well the playback speed keeps the voice's pitch may differ. Only Ubuntu's behaviour has been heard.
+- **Fonts and text.** The Mushaf pages use the King Fahd per-page fonts loaded from files, which should look the
+  same everywhere. The side panel, buttons and tables use your system's fonts and Qt theme, so spacing and the
+  dark/light look follow the theme. The layout was only seen in a dark Qt theme with right-to-left layout on Ubuntu.
+- **Right-to-left details.** A few right-to-left fixes (the keys in the shortcuts table, the order of the playback
+  icons, the position of the header text) were made by watching how Qt behaved on Ubuntu. Other platforms or
+  Qt versions might order things differently.
+- **Keyboard shortcuts.** They are written with Ctrl. On macOS Qt maps Ctrl to the Command key, so the physical
+  key differs. Ctrl+/ and Ctrl+K may depend on the keyboard layout.
+- **Downloading and building.** The download scripts and the database build are plain Python and should behave
+  the same anywhere, but the first database build takes around 30 seconds and the audio is about 16 GB. Paths with
+  spaces or non-Latin characters in them have not been tried.
+
+If you try another system, the first run is the test. Report what breaks and it can be fixed.
 
 ## Build order
 
