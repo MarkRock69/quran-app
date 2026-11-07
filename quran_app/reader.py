@@ -2,7 +2,7 @@
 
     python3 -m quran_app.reader [--page 42] [--spread]
 
-Keys:  Ctrl+G = go to (page, chapter, juz', hizb, rub' or verse 2:255),  Ctrl+F = search,  Ctrl+I = the chapter and rub' lists,  Ctrl+T = tafsir of the clicked verse,  Ctrl+U = audio (Space = pause / resume),
+Keys:  Ctrl+G = go to (page, chapter, juz', hizb, rub' or verse 2:255),  Ctrl+F = search,  Ctrl+I = the chapter and rub' lists,  Ctrl+T = tafsir of the clicked verse,  Ctrl+U = audio (Space = pause / resume),  Ctrl+/ = list of shortcuts,
        The ☰ button (top corner) opens the side panel, which has all of these as tabs.
        Ctrl+B = bookmark this page (the list is the second tab of the side panel),
        Left / PageDown / scroll down = next page,  Right / PageUp / scroll up = previous,
@@ -43,7 +43,9 @@ from .settings import Settings
 from .themes import DEFAULT_THEME, THEMES
 from .audio import Player
 from .icons import SIZE, make_icon
-from .panels import AudioPanel, BookmarksPanel, IndexPanel, JumpPanel, SearchPanel, SidePanel, TafsirPanel, ViewPanel
+from .panels import (
+    AudioPanel, BookmarksPanel, IndexPanel, JumpPanel, SearchPanel, ShortcutsPanel, SidePanel, TafsirPanel, ViewPanel,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE_ASPECT = 0.70  # width / height of one page
@@ -454,7 +456,8 @@ class ReaderWindow(QMainWindow):
         self.canvas.menu_clicked.connect(self.toggle_side)
         self.canvas.verse_clicked.connect(self.pick_verse)
         self.side = QDockWidget("القائمة", self)
-        tabs = SidePanel(self.search, self.jump, self.index, self.tafsir, self.audio, self.marks, self.view,
+        self.shortcuts_panel = ShortcutsPanel()
+        tabs = SidePanel(self.search, self.jump, self.index, self.tafsir, self.audio, self.marks, self.view, self.shortcuts_panel,
                          settings.get("tab_order"))
         tabs.order_changed.connect(lambda keys: settings.set("tab_order", keys))
         self.side.setWidget(tabs)
@@ -463,7 +466,7 @@ class ReaderWindow(QMainWindow):
         self.side.setMinimumWidth(500)
         self.side.hide()
         for keys, action in (("Ctrl+G", self.open_jump), ("Ctrl+F", self.open_search), ("Ctrl+B", self.toggle_bookmark), ("Ctrl+I", self.open_index),
-                              ("Ctrl+T", self.open_tafsir), ("Ctrl+U", self.open_audio),
+                              ("Ctrl+T", self.open_tafsir), ("Ctrl+U", self.open_audio), ("Ctrl+/", self.open_shortcuts),
                               ("Escape", self.close_side)):
             QShortcut(QKeySequence(keys), self, activated=action)
         self.canvas.add_menu_button()
@@ -617,6 +620,10 @@ class ReaderWindow(QMainWindow):
     def _show_state(self, playing):
         self.pause_button.setIcon(self._icons["pause" if playing else "play"])
         self.pause_button.setToolTip("إيقاف مؤقت" if playing else "متابعة")
+
+    def open_shortcuts(self):
+        self.side.show()
+        self.side.widget().setCurrentWidget(self.shortcuts_panel)
 
     def open_audio(self):
         self.side.show()

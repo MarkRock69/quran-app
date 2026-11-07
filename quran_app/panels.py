@@ -6,8 +6,8 @@ from html import escape
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPalette, QTextDocument
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton,
-    QRadioButton, QSpinBox, QStyle, QStyledItemDelegate, QTabWidget, QTextBrowser, QVBoxLayout, QHBoxLayout,
+    QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton,
+    QRadioButton, QSpinBox, QStyle, QStyledItemDelegate, QTableWidget, QTableWidgetItem, QTabWidget, QTextBrowser, QVBoxLayout, QHBoxLayout,
     QWidget,
 )
 
@@ -20,6 +20,7 @@ from .passages import PASSAGE_KINDS
 from .numbers import AUTO, format_number
 from .page_header import header_for
 from .settings import order_tabs
+from .shortcuts import SHORTCUTS
 from .tafsir import order_sources
 from .search import ALL_WORDS, ANY_WORD, PHRASE, SearchIndex, SearchOptions
 
@@ -871,20 +872,45 @@ class ViewPanel(QWidget):
             blocked.blockSignals(False)
 
 
+class ShortcutsPanel(QWidget):
+    """The keyboard shortcuts, for reading only."""
+
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        table = QTableWidget(len(SHORTCUTS), 2)
+        table.setHorizontalHeaderLabels(["الاختصار", "الوظيفة"])
+        table.verticalHeader().hide()
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        table.setWordWrap(True)
+        for row, (keys, meaning) in enumerate(SHORTCUTS):
+            key_item = QTableWidgetItem(keys)
+            key_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setItem(row, 0, key_item)
+            table.setItem(row, 1, QTableWidgetItem(meaning))
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        table.resizeRowsToContents()
+        layout.addWidget(table)
+
+
 class SidePanel(QTabWidget):
     """Everything the reader can do besides turning pages, in one place."""
 
     order_changed = Signal(list)  # the tab keys, left to right as stored
 
-    def __init__(self, search, jump, index, tafsir, audio, bookmarks, view, order=None):
+    def __init__(self, search, jump, index, tafsir, audio, bookmarks, view, shortcuts, order=None):
         super().__init__()
         self.search, self.jump, self.index = search, jump, index
         self.tafsir, self.bookmarks, self.view = tafsir, bookmarks, view
         self.setElideMode(Qt.TextElideMode.ElideNone)
-        self.tabBar().setStyleSheet("QTabBar::tab { padding: 6px 8px; }")  # seven tabs have to fit
+        self.tabBar().setStyleSheet("QTabBar::tab { padding: 6px 8px; }")  # eight tabs have to fit
         tabs = {"search": (search, "بحث"), "jump": (jump, "اذهب"), "index": (index, "الفهرس"),
                 "tafsir": (tafsir, "التفسير"), "audio": (audio, "الصوت"), "bookmarks": (bookmarks, "العلامات"),
-                "view": (view, "العرض")}
+                "view": (view, "العرض"), "shortcuts": (shortcuts, "الاختصارات")}
         for key in order_tabs(order, tabs):
             widget, title = tabs[key]
             self.addTab(widget, title)
