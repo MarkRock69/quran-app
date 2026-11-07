@@ -24,7 +24,7 @@ from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
     QPolygonF, QShortcut,
     QAction, QColor, QFont, QFontDatabase, QFontMetricsF, QGuiApplication, QKeySequence,
-    QPainter, QPainterPath, QPalette, QPen,
+    QIcon, QPainter, QPainterPath, QPalette, QPen,
 )
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QDockWidget, QGridLayout, QHBoxLayout, QLabel, QMainWindow, QMenu, QPushButton,
@@ -774,6 +774,12 @@ def main():
         sys.exit(f"Fonts not found or incomplete in {arguments.fonts}. Run: python3 tools/fetch_fonts.py")
     application = QApplication(sys.argv[:1])
     application.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+    # So the dock links the window to the menu entry (quran-app.desktop) and shows its icon, not a gear:
+    application.setApplicationName("quran-app")  # becomes the window class the desktop matches on
+    application.setDesktopFileName("quran-app")
+    icon = Path(__file__).resolve().parent.parent / "assets" / "quran-app.svg"
+    if icon.exists():
+        application.setWindowIcon(QIcon(str(icon)))
     settings = Settings(arguments.user_db)
     spread = settings.get("spread", False) if arguments.spread is None else arguments.spread
     window = ReaderWindow(Mushaf(arguments.db), Fonts(arguments.fonts), arguments.page, bool(spread),

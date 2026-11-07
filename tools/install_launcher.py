@@ -32,6 +32,7 @@ def desktop_entry(project, python):
         f"Exec={quote(python)} -m quran_app.reader",
         f"Path={project}",
         "Icon=quran-app",
+        "StartupWMClass=quran-app",
         "Terminal=false",
         "Categories=Education;Literature;",
         "Keywords=quran;mushaf;qur'an;قرآن;مصحف;",
