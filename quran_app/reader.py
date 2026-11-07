@@ -772,10 +772,12 @@ def main():
         sys.exit(f"{arguments.db} not found. Run: python3 tools/build_database.py --output {arguments.db}")
     if not all((arguments.fonts / name).exists() for name in ("QCF2001.ttf", "QCF2BSML.ttf")):
         sys.exit(f"Fonts not found or incomplete in {arguments.fonts}. Run: python3 tools/fetch_fonts.py")
-    application = QApplication(sys.argv[:1])
+    # The window class comes from the program name and the application name *at the moment the application
+    # is created*; it must read "quran-app" so the dock matches the menu entry (quran-app.desktop).
+    QApplication.setApplicationName("quran-app")
+    application = QApplication(["quran-app"])
     application.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
     # So the dock links the window to the menu entry (quran-app.desktop) and shows its icon, not a gear:
-    application.setApplicationName("quran-app")  # becomes the window class the desktop matches on
     application.setDesktopFileName("quran-app")
     icon = Path(__file__).resolve().parent.parent / "assets" / "quran-app.svg"
     if icon.exists():
