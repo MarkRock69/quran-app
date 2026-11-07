@@ -7,7 +7,8 @@ from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QTextDocument
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton,
-    QRadioButton, QSpinBox, QStyle, QStyledItemDelegate, QTabWidget, QVBoxLayout, QHBoxLayout, QWidget,
+    QRadioButton, QSpinBox, QStyle, QStyledItemDelegate, QTabWidget, QTextBrowser, QVBoxLayout, QHBoxLayout,
+    QWidget,
 )
 
 from .index_lists import Band, ChapterRow, RubRow, revelation_text, verse_count_text
@@ -306,6 +307,82 @@ class IndexPanel(QTabWidget):
         self.rubs.viewport().update()
 
 
+class TafsirPanel(QWidget):
+    """The tafsir of one verse. The sources are a column of buttons beside the text, in the agreed order."""
+
+    def __init__(self, mushaf, family, digits):
+        super().__init__()
+        self._mushaf, self._family, self._digits = mushaf, family, digits
+        self._verse = None
+        self._sources = mushaf.tafsir_sources()
+        layout = QHBoxLayout(self)
+        column = QVBoxLayout()
+        self.title = QLabel("اضغط على آية في الصفحة لعرض تفسيرها")
+        self.title.setWordWrap(True)
+        self.title.setStyleSheet("font-weight: bold;")
+        self.browser = QTextBrowser()
+        self.browser.setOpenLinks(False)
+        column.addWidget(self.title)
+        column.addWidget(self.browser, 1)
+        self.names = QListWidget()
+        self.names.setFixedWidth(150)
+        for source in self._sources:
+            self.names.addItem(source.title)
+        self.names.setCurrentRow(0)
+        self.names.currentRowChanged.connect(lambda _: self._show())
+        layout.addLayout(column, 1)
+        layout.addWidget(self.names)  # in the right-to-left window this is the right-hand column
+
+    def has_verse(self):
+        return self._verse is not None
+
+    def set_verse(self, chapter, number):
+        self._verse = (chapter, number)
+        self._show()
+
+    def refresh(self):
+        self._show()
+
+    def showEvent(self, event):
+        self._show()  # what was picked while the tab was hidden
+        super().showEvent(event)
+
+    def _show(self):
+        if self._verse is None or not self.isVisible():
+            return
+        chapter, number = self._verse
+        source = self._sources[max(0, self.names.currentRow())]
+        digits = self._digits()
+        name = self._mushaf.chapter_name(chapter)
+        self.title.setText(f"سُورَةُ {name}، آية {format_number(number, digits)}")
+        if not source.available:
+            body = "<p>هذه الترجمة غير متوفرة حالياً.</p>"
+            rtl = True
+        else:
+            found = self._mushaf.tafsir_entry(source, chapter, number)
+            if found is None:
+                body, rtl = "<p>لا يوجد في هذا المصدر تعليق على هذه الآية.</p>", True
+            else:
+                body, rtl = self._with_range(found, digits), source.rtl
+        font = QFont(self._family if rtl and self._family else "sans-serif")
+        font.setPixelSize(20 if rtl else 17)
+        self.browser.document().setDefaultFont(font)
+        direction = "rtl" if rtl else "ltr"
+        self.browser.setHtml(f'<div dir="{direction}">{body}</div>')
+
+    def _with_range(self, found, digits):
+        if found.first == found.last:
+            return found.html
+        (c1, v1), (c2, v2) = found.first, found.last
+        names = self._mushaf.chapter_name
+        number = lambda n: format_number(n, digits)  # noqa: E731
+        if c1 == c2:
+            label = f"الآيات {number(v1)} إلى {number(v2)}"
+        else:
+            label = f"من {names(c1)} {number(v1)} إلى {names(c2)} {number(v2)}"
+        return f'<p style="color:{MUTED_COLOR}" dir="rtl">{label}</p>' + found.html
+
+
 class _PageList(QListWidget):
     """A list of bookmarked pages; Delete removes the selected one."""
 
@@ -446,11 +523,14 @@ class ViewPanel(QWidget):
 class SidePanel(QTabWidget):
     """Everything the reader can do besides turning pages, in one place."""
 
-    def __init__(self, search, jump, index, bookmarks, view):
+    def __init__(self, search, jump, index, tafsir, bookmarks, view):
         super().__init__()
-        self.search, self.jump, self.index, self.bookmarks, self.view = search, jump, index, bookmarks, view
+        self.search, self.jump, self.index = search, jump, index
+        self.tafsir, self.bookmarks, self.view = tafsir, bookmarks, view
+        self.setElideMode(Qt.TextElideMode.ElideNone)
         self.addTab(search, "بحث")
-        self.addTab(jump, "اذهب إلى")
+        self.addTab(jump, "اذهب")
         self.addTab(index, "الفهرس")
+        self.addTab(tafsir, "التفسير")
         self.addTab(bookmarks, "العلامات")
         self.addTab(view, "العرض")

@@ -15,6 +15,7 @@ from functools import lru_cache
 from typing import Optional
 
 from .index_lists import chapter_index, rub_index
+from . import tafsir
 from .navigation import KINDS, Jump, parse_jump
 from .numbers import format_number
 from .page_header import PageInfo, rub_progress
@@ -133,6 +134,23 @@ class Mushaf:
     def rub_index(self):
         """Bands and rows of the rub' list (see index_lists.py)."""
         return rub_index(self._connection)
+
+    def tafsir_sources(self):
+        return tafsir.sources(self._connection)
+
+    def tafsir_entry(self, source, chapter, number):
+        return tafsir.entry(self._connection, source, chapter, number)
+
+    def verse_of_glyph(self, glyph_id):
+        """(chapter, verse number) of the verse a page glyph belongs to."""
+        return self._connection.execute(
+            "SELECT v.chapter, v.number FROM glyphs g JOIN verses v ON v.id = g.verse_id WHERE g.id = ?",
+            (glyph_id,),
+        ).fetchone()
+
+    def first_verse_of_page(self, page):
+        cell = self.page(page).cells[0]
+        return cell.chapter, cell.number
 
     def jump(self, kind, text):
         """Where typed text leads: a `Jump` (page, and the verse if one was asked for).

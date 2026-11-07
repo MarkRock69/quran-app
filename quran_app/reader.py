@@ -2,7 +2,7 @@
 
     python3 -m quran_app.reader [--page 42] [--spread]
 
-Keys:  Ctrl+G = go to (page, chapter, juz', hizb, rub' or verse 2:255),  Ctrl+F = search,  Ctrl+I = the chapter and rub' lists,
+Keys:  Ctrl+G = go to (page, chapter, juz', hizb, rub' or verse 2:255),  Ctrl+F = search,  Ctrl+I = the chapter and rub' lists,  Ctrl+T = tafsir of the clicked verse,
        The ☰ button (top corner) opens the side panel, which has all of these as tabs.
        Ctrl+B = bookmark this page (the list is the second tab of the side panel),
        Left / PageDown / scroll down = next page,  Right / PageUp / scroll up = previous,
@@ -36,7 +36,7 @@ from .bookmarks import DEFAULT_PATH, Bookmarks
 from .mushaf import PAGE_COUNT, Mushaf, hit_test, layout_page, spread_of
 from .numbers import format_number, next_style
 from .page_header import header_for
-from .panels import BookmarksPanel, IndexPanel, JumpPanel, SearchPanel, SidePanel, ViewPanel
+from .panels import BookmarksPanel, IndexPanel, JumpPanel, SearchPanel, SidePanel, TafsirPanel, ViewPanel
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE_ASPECT = 0.70  # width / height of one page
@@ -95,6 +95,7 @@ WHEEL_STEP = 120  # one notch of a mouse wheel; touchpads send smaller amounts t
 class PageCanvas(QWidget):
     page_step = Signal(int)  # +1 = next page (or spread), -1 = previous
     menu_clicked = Signal()
+    verse_clicked = Signal(int)  # the glyph id of a cell that was clicked
 
     def __init__(self, mushaf, fonts):
         super().__init__()
@@ -354,6 +355,8 @@ class PageCanvas(QWidget):
             self._anchor = self._cell_at(event.position())
             self.selection = (self._anchor, self._anchor) if self._anchor else None
             self.update()
+            if self._anchor:
+                self.verse_clicked.emit(self._anchor)
 
     def mouseMoveEvent(self, event):
         if self._anchor is not None and event.buttons() & Qt.MouseButton.LeftButton:
@@ -393,6 +396,7 @@ class ReaderWindow(QMainWindow):
         digits = lambda: self.canvas.digits  # noqa: E731
         self.search = SearchPanel(database_path, fonts.text_family, digits)
         self.jump = JumpPanel(mushaf)
+        self.tafsir = TafsirPanel(mushaf, fonts.text_family, digits)
         self.index = IndexPanel(mushaf, fonts.text_family, digits)
         self.marks = BookmarksPanel(bookmarks, mushaf, digits)
         self.view = ViewPanel(spread, self.canvas.number_style)
@@ -405,13 +409,15 @@ class ReaderWindow(QMainWindow):
         self.view.spread_changed.connect(self.set_spread)
         self.view.style_changed.connect(self.set_number_style)
         self.canvas.menu_clicked.connect(self.toggle_side)
+        self.canvas.verse_clicked.connect(self.pick_verse)
         self.side = QDockWidget("القائمة", self)
-        self.side.setWidget(SidePanel(self.search, self.jump, self.index, self.marks, self.view))
+        self.side.setWidget(SidePanel(self.search, self.jump, self.index, self.tafsir, self.marks, self.view))
         self.side.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.side)
-        self.side.setMinimumWidth(440)
+        self.side.setMinimumWidth(500)
         self.side.hide()
         for keys, action in (("Ctrl+G", self.open_jump), ("Ctrl+F", self.open_search), ("Ctrl+B", self.toggle_bookmark), ("Ctrl+I", self.open_index),
+                              ("Ctrl+T", self.open_tafsir),
                               ("Escape", self.close_side)):
             QShortcut(QKeySequence(keys), self, activated=action)
         self.canvas.add_menu_button()
@@ -452,6 +458,7 @@ class ReaderWindow(QMainWindow):
         self.view.show_state(self.spread, style)
         self.search.refresh_numbers()
         self.index.refresh()
+        self.tafsir.refresh()
         self.marks.refresh()
 
     def on_jump(self, target):
@@ -464,6 +471,7 @@ class ReaderWindow(QMainWindow):
         """Open the page of a verse and select it."""
         self.go_to(self.mushaf.page_of_verse(chapter, number))
         self.canvas.selection = self.mushaf.verse_cells(chapter, number)
+        self.tafsir.set_verse(chapter, number)
         self.canvas.update()
         self.canvas.setFocus()
 
@@ -471,6 +479,17 @@ class ReaderWindow(QMainWindow):
         self.side.show()
         self.side.widget().setCurrentWidget(self.jump)
         self.jump.focus()
+
+    def pick_verse(self, glyph_id):
+        """A click on the page: the tafsir shows this verse (if the panel is open or was used)."""
+        chapter, number = self.mushaf.verse_of_glyph(glyph_id)
+        self.tafsir.set_verse(chapter, number)
+
+    def open_tafsir(self):
+        self.side.show()
+        self.side.widget().setCurrentWidget(self.tafsir)
+        if not self.tafsir.has_verse():
+            self.tafsir.set_verse(*self.mushaf.first_verse_of_page(self.page))
 
     def open_index(self):
         self.side.show()
