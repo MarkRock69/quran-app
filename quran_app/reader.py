@@ -2,7 +2,7 @@
 
     python3 -m quran_app.reader [--page 42] [--spread]
 
-Keys:  Ctrl+G = go to (page, chapter, juz', hizb, rub' or verse 2:255),  Ctrl+F = search,  Ctrl+I = the chapter and rub' lists,  Ctrl+T = tafsir of the clicked verse,  Ctrl+U = audio (Space = pause / resume),  Ctrl+/ = list of shortcuts,
+Keys:  Ctrl+K = go to (page, chapter, juz', hizb, rub' or verse 2:255),  Ctrl+F = search,  Ctrl+I = the chapter and rub' lists,  Ctrl+T = tafsir of the clicked verse,  Ctrl+U = audio (Space = pause / resume),  Ctrl+/ = list of shortcuts,  Ctrl+G = dark / light pages,
        The ☰ button (top corner) opens the side panel, which has all of these as tabs.
        Ctrl+B = bookmark this page (the list is the second tab of the side panel),
        Left / PageDown / scroll down = next page,  Right / PageUp / scroll up = previous,
@@ -463,7 +463,7 @@ class ReaderWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.side)
         self.side.setMinimumWidth(500)
         self.side.hide()
-        for keys, action in (("Ctrl+G", self.open_jump), ("Ctrl+F", self.open_search), ("Ctrl+B", self.toggle_bookmark), ("Ctrl+I", self.open_index),
+        for keys, action in (("Ctrl+K", self.open_jump), ("Ctrl+G", self.toggle_theme), ("Ctrl+F", self.open_search), ("Ctrl+B", self.toggle_bookmark), ("Ctrl+I", self.open_index),
                               ("Ctrl+T", self.open_tafsir), ("Ctrl+U", self.open_audio), ("Ctrl+/", self.open_shortcuts),
                               ("Escape", self.close_side)):
             QShortcut(QKeySequence(keys), self, activated=action)
@@ -515,6 +515,9 @@ class ReaderWindow(QMainWindow):
     def set_part_style(self, part, style):
         self.canvas.set_part_style(part, style)
         self.settings.set(f"{part}_number_style", style)
+
+    def toggle_theme(self):
+        self.set_theme("dark" if self.canvas.theme == "light" else "light")
 
     def set_theme(self, name):
         self.canvas.set_theme(name)

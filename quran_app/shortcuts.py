@@ -1,7 +1,8 @@
 """The keyboard shortcuts as data, shown in the الاختصارات tab (display only; they cannot be changed)."""
 
 SHORTCUTS = (
-    ("Ctrl+G", "اذهب إلى صفحة أو سورة أو جزء أو حزب أو ربع أو آية"),
+    ("Ctrl+K", "اذهب إلى صفحة أو سورة أو جزء أو حزب أو ربع أو آية"),
+    ("Ctrl+G", "التبديل بين الصفحات الفاتحة والداكنة"),
     ("Ctrl+F", "البحث"),
     ("Ctrl+I", "فهرس السور والأرباع"),
     ("Ctrl+T", "تفسير الآية المحددة"),
