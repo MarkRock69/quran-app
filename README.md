@@ -14,7 +14,7 @@ Planned stack: Python + Qt (PySide6, Qt Quick) with SQLite. Code uses the word
 3. **Mushaf page view** (page model done and tested; the Qt window is written but not yet run, see below)
 4. Navigation: jump box, search panel, bookmarks, chapter list and rub' list (written, first run pending)
 5. Tafsir side panel with the six sources in a column (written, first run pending; The Clear Qur'an is reserved, no download exists)
-6. Audio, with a selectable passage
+6. Audio, with a selectable passage (download script and file catalog done; passage selector and player next)
 7. Themes (light, dark) and the Arabic-Indic / Western digit toggle
 
 ## Build the database
@@ -131,3 +131,16 @@ download available); its tab is reserved in the tab order.
 
 The King Fahd data, QUL data and fonts have their own terms. This repository is
 for personal use; do not make it public with these files in it.
+
+## Audio
+
+    python3 tools/fetch_audio.py                     # one time, about 11 GB: all of it
+    python3 tools/fetch_audio.py --only minshawi     # or one reciter, or reciter:style
+
+Recitations come from everyayah.com, one mp3 per verse (and one per chapter for its
+basmala, `SSS000.mp3`), as one zip for each reciter and style: al-Minshawi (murattal,
+mujawwad), Ali Jaber (murattal only; the site has no mujawwad for him) and Abdulbasit
+(murattal, mujawwad). They are unpacked into `data/audio/<reciter>/<style>/`, checked
+against the site's md5 list, and the zip is deleted. If it stops, run it again.
+`quran_app/audio_catalog.py` knows the file names and builds a playlist for any list of
+verses (basmala before the first verse of a chapter, except chapters 1 and 9).
