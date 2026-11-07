@@ -158,9 +158,9 @@ nothing needs copying between releases. To move an old setup over:
 
 ## Applications menu
 
-    python3 tools/install_launcher.py             # adds "القرآن الكريم" to the applications menu
+    python3 tools/install_launcher.py             # adds "Quran" to the applications menu
     python3 tools/install_launcher.py --remove    # takes it out
 
 The entry starts the copy of the project it was installed from, so run it again from the new folder
-when you move to a new release. Then search "Quran" or "القرآن" in the Activities overview; you can
+when you move to a new release. Then search "Quran" in the Activities overview; you can
 right-click the result and add it to the favourites (the dock).

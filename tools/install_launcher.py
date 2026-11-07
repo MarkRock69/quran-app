@@ -27,8 +27,7 @@ def desktop_entry(project, python):
     return "\n".join((
         "[Desktop Entry]",
         "Type=Application",
-        "Name=القرآن الكريم",
-        "Name[en]=Quran",
+        "Name=Quran",
         "Comment=Mushaf reader",
         f"Exec={quote(python)} -m quran_app.reader",
         f"Path={project}",
@@ -62,7 +61,7 @@ def main():
     ENTRY.write_text(desktop_entry(PROJECT, sys.executable), encoding="utf-8")
     ENTRY.chmod(0o755)
     refresh()
-    print(f"Added '{ENTRY.name}'. Search for \"القرآن\" or \"Quran\" in the applications menu.")
+    print(f"Added '{ENTRY.name}'. Search for \"Quran\" in the applications menu.")
     print(f"It starts {PROJECT} with {sys.executable}.")
 
 
