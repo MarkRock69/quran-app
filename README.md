@@ -155,3 +155,12 @@ nothing needs copying between releases. To move an old setup over:
     mkdir -p ~/.local/share/quran-app
     mv OLD_PROJECT/data/fonts ~/.local/share/quran-app/fonts
     mv OLD_PROJECT/data/audio ~/.local/share/quran-app/audio   # if you had started it
+
+## Applications menu
+
+    python3 tools/install_launcher.py             # adds "القرآن الكريم" to the applications menu
+    python3 tools/install_launcher.py --remove    # takes it out
+
+The entry starts the copy of the project it was installed from, so run it again from the new folder
+when you move to a new release. Then search "Quran" or "القرآن" in the Activities overview; you can
+right-click the result and add it to the favourites (the dock).
