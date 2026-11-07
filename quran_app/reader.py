@@ -609,9 +609,12 @@ class ReaderWindow(QMainWindow):
                               ("تكرار المقطع", self.passage_times)):
             pair = QHBoxLayout()
             pair.setSpacing(3)  # close to its label
-            pair.addWidget(QLabel(label))
+            text = QLabel(label)
+            text.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)  # no more room than its text
+            pair.addWidget(text)
             pair.addWidget(widget)
             settings_row.addLayout(pair)
+        settings_row.addStretch()  # spare room goes after the last pair, not between a label and its input
         # the range and what is playing go to the right of the controls, speed and repetitions to the left
         self.range_label = QLabel()
         for label in (self.range_label, self.now_playing):
