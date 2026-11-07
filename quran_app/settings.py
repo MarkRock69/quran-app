@@ -33,3 +33,9 @@ class Settings:
 
     def close(self):
         self._connection.close()
+
+
+def order_tabs(saved, tabs):
+    """The tab keys in the saved order; unknown keys are dropped and new ones go last."""
+    keys = [key for key in (saved or []) if key in tabs]
+    return list(dict.fromkeys(keys)) + [key for key in tabs if key not in keys]

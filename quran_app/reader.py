@@ -416,6 +416,11 @@ class ReaderWindow(QMainWindow):
         self.audio = AudioPanel(mushaf, AUDIO_DIR, self._reading_position, digits)
         self.audio.play_requested.connect(self.start_playing)
         self.audio.speed_changed.connect(self.player.set_speed)
+        self.audio.speed_changed.connect(lambda value: settings.set("speed", value))
+        speed = settings.get("speed", 1.0)
+        if isinstance(speed, (int, float)) and 0.25 <= speed <= 3:
+            self.audio.set_speed(float(speed))
+            self.player.set_speed(float(speed))
         self.player.verse_changed.connect(self.follow_verse)
         self.player.position_changed.connect(self._show_position)
         self.player.state_changed.connect(self._show_state)
@@ -436,7 +441,10 @@ class ReaderWindow(QMainWindow):
         self.canvas.menu_clicked.connect(self.toggle_side)
         self.canvas.verse_clicked.connect(self.pick_verse)
         self.side = QDockWidget("القائمة", self)
-        self.side.setWidget(SidePanel(self.search, self.jump, self.index, self.tafsir, self.audio, self.marks, self.view))
+        tabs = SidePanel(self.search, self.jump, self.index, self.tafsir, self.audio, self.marks, self.view,
+                         settings.get("tab_order"))
+        tabs.order_changed.connect(lambda keys: settings.set("tab_order", keys))
+        self.side.setWidget(tabs)
         self.side.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.side)
         self.side.setMinimumWidth(500)
@@ -472,6 +480,7 @@ class ReaderWindow(QMainWindow):
 
     def set_spread(self, spread):
         self.spread = spread
+        self.settings.set("spread", spread)
         self.view.show_state(self.spread, self.canvas.number_style, self.canvas.theme)
         self.refresh()
 
@@ -642,7 +651,8 @@ def main():
     parser.add_argument("--fonts", type=Path, default=FONTS_DIR)
     parser.add_argument("--page", type=int, default=1)
     parser.add_argument("--user-db", type=Path, default=DEFAULT_PATH, help="where bookmarks are kept")
-    parser.add_argument("--spread", action="store_true", help="show two pages side by side")
+    parser.add_argument("--spread", action=argparse.BooleanOptionalAction, default=None,
+                        help="two pages side by side (--spread) or one (--no-spread); default: as last time")
     arguments = parser.parse_args()
     if arguments.db is None:
         arguments.db = ensure_database()  # built on the first run, and again only if the sources change
@@ -652,8 +662,10 @@ def main():
         sys.exit(f"Fonts not found or incomplete in {arguments.fonts}. Run: python3 tools/fetch_fonts.py")
     application = QApplication(sys.argv[:1])
     application.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
-    window = ReaderWindow(Mushaf(arguments.db), Fonts(arguments.fonts), arguments.page, arguments.spread,
-                          arguments.db, Bookmarks(arguments.user_db), Settings(arguments.user_db))
+    settings = Settings(arguments.user_db)
+    spread = settings.get("spread", False) if arguments.spread is None else arguments.spread
+    window = ReaderWindow(Mushaf(arguments.db), Fonts(arguments.fonts), arguments.page, bool(spread),
+                          arguments.db, Bookmarks(arguments.user_db), settings)
     window.show()
     sys.exit(application.exec())
 

@@ -19,6 +19,7 @@ from .navigation import HINT, KINDS, normalize_digits
 from .passages import PASSAGE_KINDS
 from .numbers import format_number
 from .page_header import header_for
+from .settings import order_tabs
 from .tafsir import order_sources
 from .search import ALL_WORDS, ANY_WORD, PHRASE, SearchIndex, SearchOptions
 
@@ -640,6 +641,11 @@ class AudioPanel(QWidget):
 
     # ------------------------------------------------------------ playing
 
+    def set_speed(self, value):
+        """Show a remembered speed (the reader tells the player itself)."""
+        self._speed = value
+        self.speed.setCurrentText(speed_text(value))
+
     def _apply_speed(self):
         try:
             value = parse_speed(self.speed.currentText())
@@ -844,16 +850,23 @@ class ViewPanel(QWidget):
 class SidePanel(QTabWidget):
     """Everything the reader can do besides turning pages, in one place."""
 
-    def __init__(self, search, jump, index, tafsir, audio, bookmarks, view):
+    order_changed = Signal(list)  # the tab keys, left to right as stored
+
+    def __init__(self, search, jump, index, tafsir, audio, bookmarks, view, order=None):
         super().__init__()
         self.search, self.jump, self.index = search, jump, index
         self.tafsir, self.bookmarks, self.view = tafsir, bookmarks, view
         self.setElideMode(Qt.TextElideMode.ElideNone)
         self.tabBar().setStyleSheet("QTabBar::tab { padding: 6px 8px; }")  # seven tabs have to fit
-        self.addTab(search, "بحث")
-        self.addTab(jump, "اذهب")
-        self.addTab(index, "الفهرس")
-        self.addTab(tafsir, "التفسير")
-        self.addTab(audio, "الصوت")
-        self.addTab(bookmarks, "العلامات")
-        self.addTab(view, "العرض")
+        tabs = {"search": (search, "بحث"), "jump": (jump, "اذهب"), "index": (index, "الفهرس"),
+                "tafsir": (tafsir, "التفسير"), "audio": (audio, "الصوت"), "bookmarks": (bookmarks, "العلامات"),
+                "view": (view, "العرض")}
+        for key in order_tabs(order, tabs):
+            widget, title = tabs[key]
+            self.addTab(widget, title)
+            widget.setProperty("tab_key", key)
+        self.tabBar().setMovable(True)  # drag a tab to put it elsewhere
+        self.tabBar().tabMoved.connect(lambda *_: self.order_changed.emit(self.order()))
+
+    def order(self):
+        return [self.widget(i).property("tab_key") for i in range(self.count())]

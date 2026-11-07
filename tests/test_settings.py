@@ -23,3 +23,12 @@ class ThemeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TabOrderTests(unittest.TestCase):
+    def test_order_tabs(self):
+        from quran_app.settings import order_tabs
+        tabs = {"a": 1, "b": 2, "c": 3}
+        self.assertEqual(order_tabs(["c", "a"], tabs), ["c", "a", "b"])
+        self.assertEqual(order_tabs(["x", "b", "b"], tabs), ["b", "a", "c"])
+        self.assertEqual(order_tabs(None, tabs), ["a", "b", "c"])
