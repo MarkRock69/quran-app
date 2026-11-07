@@ -27,7 +27,7 @@ from PySide6.QtGui import (
     QPainter, QPainterPath, QPalette, QPen,
 )
 from PySide6.QtWidgets import (
-    QApplication, QDockWidget, QHBoxLayout, QLabel, QMainWindow, QMenu, QPushButton, QToolButton, QWidget,
+    QApplication, QDockWidget, QGridLayout, QHBoxLayout, QLabel, QMainWindow, QMenu, QPushButton, QSizePolicy, QToolButton, QWidget,
 )
 
 from .banner import (
@@ -580,8 +580,17 @@ class ReaderWindow(QMainWindow):
             button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             button.clicked.connect(action)
             row.addWidget(button)
-        bar.addPermanentWidget(controls)
-        bar.addWidget(self.now_playing, 1)
+        # three equal columns, so the controls sit exactly in the middle: [what is playing] [controls] [ ]
+        holder = QWidget()
+        grid = QGridLayout(holder)
+        grid.setContentsMargins(0, 0, 0, 0)
+        self.now_playing.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)  # never pushes
+        grid.addWidget(self.now_playing, 0, 0)
+        grid.addWidget(controls, 0, 1)
+        grid.addWidget(QWidget(), 0, 2)
+        for column in (0, 2):
+            grid.setColumnStretch(column, 1)
+        bar.addWidget(holder, 1)
         bar.hide()
 
     def start_playing(self, queue):
