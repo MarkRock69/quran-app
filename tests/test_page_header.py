@@ -89,7 +89,7 @@ class HeaderTest(unittest.TestCase):
         h = header(42)
         self.assertEqual((h.chapter_number, h.chapter_name), ("٢", mushaf.chapter_name(2)))
         self.assertEqual(header(604, "western").chapter_number, "112")
-        self.assertEqual(header(42, "words").chapter_number, "الثانية")
+        self.assertEqual(header(42, "words").chapter_number, "(الثانية)")
 
     def test_every_page_has_a_header(self):
         for page in range(1, 605):

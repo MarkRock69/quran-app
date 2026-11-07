@@ -110,7 +110,7 @@ names and the basmala are glyphs of the King Fahd font QCF2BSML.ttf (rerun
 `tools/fetch_fonts.py` once to get it; it skips what you already have). The ☰ button in the top corner opens the side panel, which has everything below
 as tabs (search, go to, bookmarks, view: one or two pages and the number style),
 so the keyboard is never required. Ctrl+G = go to a page, chapter, juz', hizb or rub' by number, or a verse as `2:255`
-(either digit style). Click a verse on the page and its tafsir shows in the التفسير tab (Ctrl+T), with the six
+(either digit style). The display tab also switches the pages between light and dark; the side panel follows your Qt theme. The tafsir sources can be dragged into any order; the order, the page colours and the number style are remembered in `~/.local/share/quran-app/user.db`. Click a verse on the page and its tafsir shows in the التفسير tab (Ctrl+T), with the six
 sources as a column beside the text; a text that covers several verses says so. Ctrl+I opens the chapter list (juz' bands, page, Meccan or Medinan, verse count)
 and the rub' list (circle showing how much of the hizb has passed, opening words,
 chapter and verse, page), laid out like the Quran Android app; choosing a row goes

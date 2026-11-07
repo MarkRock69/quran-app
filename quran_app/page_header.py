@@ -52,4 +52,7 @@ def header_for(info, chapter_name, style="indic"):
         fraction = _FRACTIONS.get(info.quarters)
         hizb = f"الحزب {n(info.hizb)}"
         right += f"{_COMMA} {fraction + ' ' if fraction else ''}{hizb}"
-    return Header(right, chapter_name, number_text(info.chapter, style, feminine=True))
+    number = number_text(info.chapter, style, feminine=True)
+    if style == "words":
+        number = f"({number})"  # a word needs brackets to read as the chapter's number
+    return Header(right, chapter_name, number)

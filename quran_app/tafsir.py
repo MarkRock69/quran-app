@@ -63,6 +63,13 @@ def sources(connection):
     return result
 
 
+def order_sources(all_sources, keys):
+    """The sources in the order the reader chose (`keys`); any not mentioned keep their place at the end."""
+    by_key = {source.key: source for source in all_sources}
+    chosen = [by_key[key] for key in dict.fromkeys(keys or ()) if key in by_key]
+    return chosen + [source for source in all_sources if source not in chosen]
+
+
 def entry(connection, source, chapter, number) -> Optional[Entry]:
     """The text of `source` for a verse, or None if it has nothing on it."""
     if not source.available:

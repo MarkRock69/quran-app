@@ -36,14 +36,12 @@ from .bookmarks import DEFAULT_PATH, Bookmarks
 from .mushaf import PAGE_COUNT, Mushaf, hit_test, layout_page, spread_of
 from .numbers import format_number, next_style
 from .page_header import header_for
+from .settings import Settings
+from .themes import DEFAULT_THEME, THEMES
 from .panels import BookmarksPanel, IndexPanel, JumpPanel, SearchPanel, SidePanel, TafsirPanel, ViewPanel
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE_ASPECT = 0.70  # width / height of one page
-PAGE_BACKGROUND = QColor("#fbf8ee")
-TEXT_COLOR = QColor("#111111")
-SELECTION_COLOR = QColor(70, 130, 220, 90)
-FRAME_COLOR = QColor("#2f6b57")
 MEASURE_SIZE = 1000  # measure glyphs at a large size, then divide
 
 
@@ -103,6 +101,7 @@ class PageCanvas(QWidget):
         self.number_style = "indic"  # 'indic', 'western' or 'words'
         self.bookmarks = None
         self._menu_button = None
+        self.set_theme(DEFAULT_THEME)
         self.mushaf = mushaf
         self.fonts = fonts
         self.pages = []  # pages shown, right to left
@@ -120,6 +119,12 @@ class PageCanvas(QWidget):
 
     def set_number_style(self, style):
         self.number_style = style
+        self.update()
+
+    def set_theme(self, name):
+        self.theme = name
+        self.colors = {key: QColor(*value) if isinstance(value, tuple) else QColor(value)
+                       for key, value in THEMES[name].items()}
         self.update()
 
     @property
@@ -194,10 +199,10 @@ class PageCanvas(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-        painter.fillRect(self.rect(), QColor("#e9e2d0"))
+        painter.fillRect(self.rect(), self.colors["surround"])
         low, high = self.selection if self.selection else (None, None)
         for page, rect in zip(self.pages, self._page_rects()):
-            painter.fillRect(rect, PAGE_BACKGROUND)
+            painter.fillRect(rect, self.colors["page"])
             inner, placed, size = self._layout(page, rect)
             font = self.fonts.page_font(page, size)
             metrics = QFontMetricsF(font)
@@ -208,26 +213,25 @@ class PageCanvas(QWidget):
                     self._paint_header(painter, item, x, y, size)
                     continue
                 if low is not None and low <= item.cell.glyph_id <= high:
-                    painter.fillRect(QRectF(x, y, item.width, item.height), SELECTION_COLOR)
+                    painter.fillRect(QRectF(x, y, item.width, item.height), self.colors["selection"])
                 painter.setFont(font)
-                painter.setPen(TEXT_COLOR)
+                painter.setPen(self.colors["text"])
                 painter.drawText(QPointF(x, y + item.height / 2 + shift), item.cell.text)
             self._paint_page_header(painter, page, rect)
             if self.bookmarks is not None and self.bookmarks.has(page):
                 self._paint_ribbon(painter, rect)
             painter.setFont(QFont("sans-serif", 9))
-            painter.setPen(QColor("#666666"))
+            painter.setPen(self.colors["muted"])
             painter.drawText(
                 QRectF(rect.x(), rect.bottom() - rect.height() * 0.05, rect.width(), rect.height() * 0.05),
                 Qt.AlignmentFlag.AlignCenter, format_number(page, self.digits),
             )
 
-    @staticmethod
-    def _paint_ribbon(painter, rect):
+    def _paint_ribbon(self, painter, rect):
         """A small red ribbon at the top corner of a bookmarked page."""
         x, y, w, h = rect.x() + rect.width() * 0.006, rect.y(), rect.width() * 0.028, rect.height() * 0.055
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#b3261e"))
+        painter.setBrush(self.colors["ribbon"])
         painter.drawPolygon(QPolygonF([QPointF(x, y), QPointF(x + w, y), QPointF(x + w, y + h),
                                        QPointF(x + w / 2, y + h * 0.78), QPointF(x, y + h)]))
 
@@ -237,7 +241,7 @@ class PageCanvas(QWidget):
         font = QFont(self.fonts.text_family or "serif")
         font.setPixelSize(max(8, round(rect.height() * 0.026)))
         painter.setFont(font)
-        painter.setPen(TEXT_COLOR)
+        painter.setPen(self.colors["text"])
         strip = QRectF(rect.x() + rect.width() * 0.04, rect.y() + rect.height() * 0.012,
                        rect.width() * 0.92, rect.height() * 0.042)
         painter.drawText(strip, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignAbsolute | Qt.AlignmentFlag.AlignVCenter,
@@ -245,7 +249,7 @@ class PageCanvas(QWidget):
         # name first, so the number lands to its left in a right-to-left line
         painter.drawText(strip, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignAbsolute | Qt.AlignmentFlag.AlignVCenter,
                          f"{header.chapter_name} {header.chapter_number}")
-        painter.setPen(QPen(FRAME_COLOR, 1))
+        painter.setPen(QPen(self.colors["frame"], 1))
         painter.drawLine(QPointF(strip.left(), strip.bottom() + 2), QPointF(strip.right(), strip.bottom() + 2))
 
     def _paint_header(self, painter, item, x, y, size):
@@ -292,7 +296,7 @@ class PageCanvas(QWidget):
         painter.translate(left - ink.x() * scale, top - ink.y() * scale)
         painter.scale(scale, scale)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(FRAME_COLOR)
+        painter.setBrush(self.colors["frame"])
         painter.drawPath(stretched)
         painter.restore()
         oval_left = left + ink.width() * OVAL_LEFT * scale
@@ -318,8 +322,9 @@ class PageCanvas(QWidget):
         painter.drawText(QPointF(0, 0), text)
         painter.restore()
 
-    def _draw_fitted(self, painter, font, text, box, color=TEXT_COLOR):
+    def _draw_fitted(self, painter, font, text, box, color=None):
         """Draw `text` as large as fits in `box` (same proportions), centered. Returns where its ink went."""
+        color = color or self.colors["text"]
         ink = self._ink(font, text)
         scale = min(box.width() / ink.width(), box.height() / ink.height())
         target = QRectF(0, 0, ink.width() * scale, ink.height() * scale)
@@ -336,9 +341,9 @@ class PageCanvas(QWidget):
         scale = min(box.width() / total, box.height() / (bottom - top))
         right = box.center().x() + total * scale / 2
         baseline = box.center().y() - (bottom - top) * scale / 2 - top * scale
-        self._draw_ink(painter, font, SURAH_WORD, right - word.width() * scale, baseline, scale, TEXT_COLOR)
+        self._draw_ink(painter, font, SURAH_WORD, right - word.width() * scale, baseline, scale, self.colors["text"])
         self._draw_ink(painter, font, name, right - (word.width() + gap + title.width()) * scale, baseline,
-                       scale, TEXT_COLOR)
+                       scale, self.colors["text"])
 
     # ------------------------------------------------------------ selection
 
@@ -383,12 +388,16 @@ class PageCanvas(QWidget):
 
 
 class ReaderWindow(QMainWindow):
-    def __init__(self, mushaf, fonts, page, spread, database_path, bookmarks):
+    def __init__(self, mushaf, fonts, page, spread, database_path, bookmarks, settings):
         super().__init__()
         self.setWindowTitle("القرآن الكريم")  # القرآن الكريم
-        self.mushaf, self.bookmarks = mushaf, bookmarks
+        self.mushaf, self.bookmarks, self.settings = mushaf, bookmarks, settings
         self.canvas = PageCanvas(mushaf, fonts)
         self.canvas.bookmarks = bookmarks
+        theme = settings.get("theme", DEFAULT_THEME)
+        self.canvas.set_theme(theme if theme in THEMES else DEFAULT_THEME)
+        style = settings.get("number_style", "indic")
+        self.canvas.set_number_style(style if style in ("indic", "western", "words") else "indic")
         self.setCentralWidget(self.canvas)
         self.canvas.page_step.connect(self.step)
         self.page = page
@@ -396,10 +405,11 @@ class ReaderWindow(QMainWindow):
         digits = lambda: self.canvas.digits  # noqa: E731
         self.search = SearchPanel(database_path, fonts.text_family, digits)
         self.jump = JumpPanel(mushaf)
-        self.tafsir = TafsirPanel(mushaf, fonts.text_family, digits)
+        self.tafsir = TafsirPanel(mushaf, fonts.text_family, digits, settings.get("tafsir_order"))
+        self.tafsir.order_changed.connect(lambda keys: settings.set("tafsir_order", keys))
         self.index = IndexPanel(mushaf, fonts.text_family, digits)
         self.marks = BookmarksPanel(bookmarks, mushaf, digits)
-        self.view = ViewPanel(spread, self.canvas.number_style)
+        self.view = ViewPanel(spread, self.canvas.number_style, self.canvas.theme)
         self.search.chosen.connect(self.show_verse)
         self.jump.jumped.connect(self.on_jump)
         self.index.chosen.connect(self.go_to)
@@ -408,6 +418,7 @@ class ReaderWindow(QMainWindow):
         self.marks.removed_page.connect(lambda _: self.canvas.update())
         self.view.spread_changed.connect(self.set_spread)
         self.view.style_changed.connect(self.set_number_style)
+        self.view.theme_changed.connect(self.set_theme)
         self.canvas.menu_clicked.connect(self.toggle_side)
         self.canvas.verse_clicked.connect(self.pick_verse)
         self.side = QDockWidget("القائمة", self)
@@ -447,7 +458,7 @@ class ReaderWindow(QMainWindow):
 
     def set_spread(self, spread):
         self.spread = spread
-        self.view.show_state(self.spread, self.canvas.number_style)
+        self.view.show_state(self.spread, self.canvas.number_style, self.canvas.theme)
         self.refresh()
 
     def cycle_numbers(self):
@@ -455,11 +466,17 @@ class ReaderWindow(QMainWindow):
 
     def set_number_style(self, style):
         self.canvas.set_number_style(style)
-        self.view.show_state(self.spread, style)
+        self.settings.set("number_style", style)
+        self.view.show_state(self.spread, style, self.canvas.theme)
         self.search.refresh_numbers()
         self.index.refresh()
         self.tafsir.refresh()
         self.marks.refresh()
+
+    def set_theme(self, name):
+        self.canvas.set_theme(name)
+        self.settings.set("theme", name)
+        self.view.show_state(self.spread, self.canvas.number_style, name)
 
     def on_jump(self, target):
         if target.verse:
@@ -553,7 +570,7 @@ def main():
     application = QApplication(sys.argv[:1])
     application.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
     window = ReaderWindow(Mushaf(arguments.db), Fonts(arguments.fonts), arguments.page, arguments.spread,
-                          arguments.db, Bookmarks(arguments.user_db))
+                          arguments.db, Bookmarks(arguments.user_db), Settings(arguments.user_db))
     window.show()
     sys.exit(application.exec())
 

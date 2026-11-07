@@ -4,7 +4,7 @@ navigation.py and bookmarks.py, which are tested without a window."""
 from html import escape
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QTextDocument
+from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPalette, QTextDocument
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton,
     QRadioButton, QSpinBox, QStyle, QStyledItemDelegate, QTabWidget, QTextBrowser, QVBoxLayout, QHBoxLayout,
@@ -15,10 +15,11 @@ from .index_lists import Band, ChapterRow, RubRow, revelation_text, verse_count_
 from .navigation import HINT, KINDS
 from .numbers import format_number
 from .page_header import header_for
+from .tafsir import order_sources
 from .search import ALL_WORDS, ANY_WORD, PHRASE, SearchIndex, SearchOptions
 
-MATCH_COLOR = "#b3261e"
-MUTED_COLOR = "#6b6b6b"
+MATCH_COLOR = "#e0483f"  # readable on light and dark
+MUTED_COLOR = "#8a8a8a"
 MAX_RESULTS = 300
 HTML_ROLE = Qt.ItemDataRole.UserRole
 TARGET_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -176,12 +177,13 @@ class SearchPanel(QWidget):
             self._open(self.results.item(0))
 
 
-BAND_COLOR = QColor("#e3dcc7")
-ROW_COLOR = QColor("#fbf8ee")
-DEEP_GREEN = QColor("#2f6b57")
-PALE_GREEN = QColor("#cfe3dc")
-INK = QColor("#111111")
-MUTED = QColor("#6b6b6b")
+ACCENT = QColor("#3f8f74")  # the circles of the rub' list, readable on light and dark
+
+
+def mix(first, second, amount):
+    """`first` with `amount` (0 to 1) of `second` blended in."""
+    return QColor(*(round(a * (1 - amount) + b * amount) for a, b in (
+        (first.red(), second.red()), (first.green(), second.green()), (first.blue(), second.blue()))))
 
 
 class IndexDelegate(QStyledItemDelegate):
@@ -208,34 +210,36 @@ class IndexDelegate(QStyledItemDelegate):
     def paint(self, painter, option, index):
         row, rect = index.data(HTML_ROLE), QRectF(option.rect)
         digits = self._digits()
+        base, text = option.palette.color(QPalette.ColorRole.Base), option.palette.color(QPalette.ColorRole.Text)
+        self._ink, self._muted = text, mix(base, text, 0.62)
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
-        painter.fillRect(rect, BAND_COLOR if isinstance(row, Band) else ROW_COLOR)
+        painter.fillRect(rect, mix(base, text, 0.12) if isinstance(row, Band) else base)
         if selected:
             painter.fillRect(rect, QColor(70, 130, 220, 50))
         right, left = rect.right() - 16, rect.left() + 16
         number = lambda n: format_number(n, digits)  # noqa: E731
         page = row.page
-        painter.setPen(MUTED)
+        painter.setPen(self._muted)
         painter.setFont(self._font(16, text=False))
         painter.drawText(QRectF(left, rect.top(), 70, rect.height()),
                          Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignAbsolute | Qt.AlignmentFlag.AlignVCenter,
                          number(page))
         if isinstance(row, Band):
-            painter.setPen(INK)
+            painter.setPen(self._ink)
             painter.setFont(self._font(20, bold=True))
             self._text(painter, QRectF(left + 80, rect.top(), right - left - 80, rect.height()),
                        f"الجزء {number(row.juz)}")
         elif isinstance(row, ChapterRow):
-            painter.setPen(MUTED)
+            painter.setPen(self._muted)
             painter.setFont(self._font(34, text=False))
             self._text(painter, QRectF(right - 56, rect.top(), 56, rect.height()), number(row.chapter))
             body = QRectF(left + 80, rect.top(), right - 70 - left - 80, rect.height())
             self._two_lines(painter, body, f"سُورَةُ {row.name}",
                             f"{revelation_text(row.meccan)} - {verse_count_text(row.verse_count, digits)}")
         else:
-            self._pie(painter, QRectF(right - 54, rect.center().y() - 27, 54, 54), row, digits)
+            self._pie(painter, QRectF(right - 54, rect.center().y() - 27, 54, 54), row, digits, base)
             body = QRectF(left + 80, rect.top(), right - 70 - left - 80, rect.height())
             self._two_lines(painter, body, row.text,
                             f"سُورَةُ {row.chapter_name}، آية {number(row.verse)}")
@@ -248,26 +252,26 @@ class IndexDelegate(QStyledItemDelegate):
 
     def _two_lines(self, painter, body, first, second):
         half = body.height() / 2
-        painter.setPen(INK)
+        painter.setPen(self._ink)
         painter.setFont(self._font(21, bold=True))
         self._text(painter, QRectF(body.left(), body.top() + 6, body.width(), half - 2), first)
-        painter.setPen(MUTED)
+        painter.setPen(self._muted)
         painter.setFont(self._font(17))
         self._text(painter, QRectF(body.left(), body.center().y() - 2, body.width(), half - 2), second)
 
-    def _pie(self, painter, rect, row, digits):
+    def _pie(self, painter, rect, row, digits, base):
         """A full circle with the hizb number at the start of a hizb; otherwise the quarters gone by."""
         painter.setPen(Qt.PenStyle.NoPen)
         if row.position == 1:
-            painter.setBrush(DEEP_GREEN)
+            painter.setBrush(ACCENT)
             painter.drawEllipse(rect)
             painter.setPen(QColor("white"))
             painter.setFont(self._font(20, text=False))
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, format_number(row.hizb, digits))
             return
-        painter.setBrush(PALE_GREEN)
+        painter.setBrush(mix(base, ACCENT, 0.3))
         painter.drawEllipse(rect)
-        painter.setBrush(DEEP_GREEN)
+        painter.setBrush(ACCENT)
         painter.drawPie(rect, 90 * 16, -(row.position - 1) * 90 * 16)  # clockwise from twelve o'clock
 
 
@@ -310,11 +314,14 @@ class IndexPanel(QTabWidget):
 class TafsirPanel(QWidget):
     """The tafsir of one verse. The sources are a column of buttons beside the text, in the agreed order."""
 
-    def __init__(self, mushaf, family, digits):
+    order_changed = Signal(list)  # the source keys, in the order the reader chose
+
+    def __init__(self, mushaf, family, digits, order=None):
         super().__init__()
         self._mushaf, self._family, self._digits = mushaf, family, digits
         self._verse = None
-        self._sources = mushaf.tafsir_sources()
+        self._sources = order_sources(mushaf.tafsir_sources(), order)
+        self._by_key = {source.key: source for source in self._sources}
         layout = QHBoxLayout(self)
         column = QVBoxLayout()
         self.title = QLabel("اضغط على آية في الصفحة لعرض تفسيرها")
@@ -327,11 +334,30 @@ class TafsirPanel(QWidget):
         self.names = QListWidget()
         self.names.setFixedWidth(150)
         for source in self._sources:
-            self.names.addItem(source.title)
+            item = QListWidgetItem(source.title)
+            item.setData(TARGET_ROLE, source.key)
+            self.names.addItem(item)
         self.names.setCurrentRow(0)
+        self.names.setDragDropMode(QListWidget.DragDropMode.InternalMove)  # drag to rearrange
+        self.names.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.names.currentRowChanged.connect(lambda _: self._show())
+        self.names.model().rowsMoved.connect(self._moved)
+        hint = QLabel("اسحب المصادر لإعادة ترتيبها")
+        hint.setWordWrap(True)
+        hint.setStyleSheet(f"color: {MUTED_COLOR}")
+        side = QVBoxLayout()
+        side.addWidget(self.names, 1)
+        side.addWidget(hint)
         layout.addLayout(column, 1)
-        layout.addWidget(self.names)  # in the right-to-left window this is the right-hand column
+        layout.addLayout(side)  # in the right-to-left window this is the right-hand column
+
+    def _keys(self):
+        return [self.names.item(row).data(TARGET_ROLE) for row in range(self.names.count())]
+
+    def _moved(self, *_):
+        keys = self._keys()
+        self._sources = [self._by_key[key] for key in keys]
+        self.order_changed.emit(keys)
 
     def has_verse(self):
         return self._verse is not None
@@ -351,7 +377,8 @@ class TafsirPanel(QWidget):
         if self._verse is None or not self.isVisible():
             return
         chapter, number = self._verse
-        source = self._sources[max(0, self.names.currentRow())]
+        item = self.names.currentItem() or self.names.item(0)
+        source = self._by_key[item.data(TARGET_ROLE)]
         digits = self._digits()
         name = self._mushaf.chapter_name(chapter)
         self.title.setText(f"سُورَةُ {name}، آية {format_number(number, digits)}")
@@ -482,10 +509,13 @@ class ViewPanel(QWidget):
 
     spread_changed = Signal(bool)
     style_changed = Signal(str)
+    theme_changed = Signal(str)
 
     STYLES = (("indic", "أرقام هندية (١٢٣)"), ("western", "أرقام غربية (123)"), ("words", "كلمات (الأول)"))
 
-    def __init__(self, spread, style):
+    THEMES = (("light", "فاتح"), ("dark", "داكن"))
+
+    def __init__(self, spread, style, theme):
         super().__init__()
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("العرض"))
@@ -507,16 +537,28 @@ class ViewPanel(QWidget):
             self.numbers.addButton(button)
             button.toggled.connect(lambda checked, value=value: checked and self.style_changed.emit(value))
             layout.addWidget(button)
+        layout.addSpacing(16)
+        layout.addWidget(QLabel("لون الصفحات"))
+        self.colors = QButtonGroup(self)
+        self._theme_buttons = {}
+        for value, label in self.THEMES:
+            button = QRadioButton(label)
+            self._theme_buttons[value] = button
+            self.colors.addButton(button)
+            button.toggled.connect(lambda checked, value=value: checked and self.theme_changed.emit(value))
+            layout.addWidget(button)
         layout.addStretch()
-        self.show_state(spread, style)
+        self.show_state(spread, style, theme)
 
-    def show_state(self, spread, style):
+    def show_state(self, spread, style, theme):
         """Tick the buttons for the current state without announcing a change."""
-        for blocked in (*self._page_buttons.values(), *self._style_buttons.values()):
+        buttons = (*self._page_buttons.values(), *self._style_buttons.values(), *self._theme_buttons.values())
+        for blocked in buttons:
             blocked.blockSignals(True)
         self._page_buttons[bool(spread)].setChecked(True)
         self._style_buttons[style].setChecked(True)
-        for blocked in (*self._page_buttons.values(), *self._style_buttons.values()):
+        self._theme_buttons[theme].setChecked(True)
+        for blocked in buttons:
             blocked.blockSignals(False)
 
 

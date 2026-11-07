@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from support import database_path  # noqa: E402
 from quran_app.mushaf import Mushaf  # noqa: E402
-from quran_app.tafsir import body_to_html  # noqa: E402
+from quran_app.tafsir import body_to_html, order_sources  # noqa: E402
 
 mushaf = None
 
@@ -72,6 +72,19 @@ class EntryTest(unittest.TestCase):
         html = body_to_html("sahih", "One[[first <note>]] two[[second]] three.")
         self.assertIn("One<sup>1</sup> two<sup>2</sup> three.", html)
         self.assertIn("<p><sup>1</sup> first &lt;note&gt;</p>", html)
+
+
+class OrderTest(unittest.TestCase):
+    def test_saved_order_then_the_rest(self):
+        sources = mushaf.tafsir_sources()
+        keys = [s.key for s in order_sources(sources, ["tahrir", "sahih"])]
+        self.assertEqual(keys[:2], ["tahrir", "sahih"])
+        self.assertEqual(sorted(keys), sorted(s.key for s in sources))
+
+    def test_nothing_saved_keeps_the_default_and_unknown_keys_are_ignored(self):
+        sources = mushaf.tafsir_sources()
+        self.assertEqual(order_sources(sources, None), sources)
+        self.assertEqual(order_sources(sources, ["nope", "irab", "irab"])[0].key, "irab")
 
 
 class GlyphTest(unittest.TestCase):
