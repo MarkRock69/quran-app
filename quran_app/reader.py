@@ -36,7 +36,7 @@ from .banner import (
 )
 from .bookmarks import DEFAULT_PATH, Bookmarks
 from .mushaf import PAGE_COUNT, Mushaf, hit_test, layout_page, spread_of
-from .numbers import format_number, next_style
+from .numbers import AUTO, PARTS, STYLES, effective_style, format_number, next_style
 from .page_header import header_for
 from .paths import AUDIO_DIR, FONTS_DIR, ensure_database
 from .settings import Settings
@@ -104,6 +104,7 @@ class PageCanvas(QWidget):
         super().__init__()
         self._wheel = 0
         self.number_style = "indic"  # 'indic', 'western' or 'words'
+        self.part_styles = {part: AUTO for part in PARTS}  # chapter, juz' and page numbers may differ
         self.bookmarks = None
         self._menu_button = None
         self.set_theme(DEFAULT_THEME)
@@ -125,6 +126,13 @@ class PageCanvas(QWidget):
     def set_number_style(self, style):
         self.number_style = style
         self.update()
+
+    def set_part_style(self, part, style):
+        self.part_styles[part] = style
+        self.update()
+
+    def style_of(self, part):
+        return effective_style(self.part_styles[part], self.number_style, words_ok=part != "page")
 
     def set_theme(self, name):
         self.theme = name
@@ -229,7 +237,7 @@ class PageCanvas(QWidget):
             painter.setPen(self.colors["muted"])
             painter.drawText(
                 QRectF(rect.x(), rect.bottom() - rect.height() * 0.05, rect.width(), rect.height() * 0.05),
-                Qt.AlignmentFlag.AlignCenter, format_number(page, self.digits),
+                Qt.AlignmentFlag.AlignCenter, format_number(page, self.style_of("page")),
             )
 
     def _paint_ribbon(self, painter, rect):
@@ -242,7 +250,8 @@ class PageCanvas(QWidget):
 
     def _paint_page_header(self, painter, page, rect):
         header = header_for(self.mushaf.page_info(page), self.mushaf.chapter_name(
-            self.mushaf.page_info(page).chapter), self.number_style)
+            self.mushaf.page_info(page).chapter), self.number_style,
+            juz_style=self.style_of("juz"), chapter_style=self.style_of("chapter"))
         font = QFont(self.fonts.text_family or "serif")
         font.setPixelSize(max(8, round(rect.height() * 0.026)))
         painter.setFont(font)
@@ -403,6 +412,9 @@ class ReaderWindow(QMainWindow):
         self.canvas.set_theme(theme if theme in THEMES else DEFAULT_THEME)
         style = settings.get("number_style", "indic")
         self.canvas.set_number_style(style if style in ("indic", "western", "words") else "indic")
+        for part in PARTS:
+            choice = settings.get(f"{part}_number_style", AUTO)
+            self.canvas.set_part_style(part, choice if choice in STYLES else AUTO)
         self.setCentralWidget(self.canvas)
         self.canvas.page_step.connect(self.step)
         self.page = page
@@ -428,7 +440,7 @@ class ReaderWindow(QMainWindow):
         self._build_transport()
         self.index = IndexPanel(mushaf, fonts.text_family, digits)
         self.marks = BookmarksPanel(bookmarks, mushaf, digits)
-        self.view = ViewPanel(spread, self.canvas.number_style, self.canvas.theme)
+        self.view = ViewPanel(spread, self.canvas.number_style, self.canvas.theme, self.canvas.part_styles)
         self.search.chosen.connect(self.show_verse)
         self.jump.jumped.connect(self.on_jump)
         self.index.chosen.connect(self.go_to)
@@ -438,6 +450,7 @@ class ReaderWindow(QMainWindow):
         self.view.spread_changed.connect(self.set_spread)
         self.view.style_changed.connect(self.set_number_style)
         self.view.theme_changed.connect(self.set_theme)
+        self.view.part_changed.connect(self.set_part_style)
         self.canvas.menu_clicked.connect(self.toggle_side)
         self.canvas.verse_clicked.connect(self.pick_verse)
         self.side = QDockWidget("القائمة", self)
@@ -496,6 +509,10 @@ class ReaderWindow(QMainWindow):
         self.index.refresh()
         self.tafsir.refresh()
         self.marks.refresh()
+
+    def set_part_style(self, part, style):
+        self.canvas.set_part_style(part, style)
+        self.settings.set(f"{part}_number_style", style)
 
     def set_theme(self, name):
         self.canvas.set_theme(name)

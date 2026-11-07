@@ -17,7 +17,7 @@ from .audio_catalog import (
 from .index_lists import Band, ChapterRow, RubRow, revelation_text, verse_count_text
 from .navigation import HINT, KINDS, normalize_digits
 from .passages import PASSAGE_KINDS
-from .numbers import format_number
+from .numbers import AUTO, format_number
 from .page_header import header_for
 from .settings import order_tabs
 from .tafsir import order_sources
@@ -795,13 +795,21 @@ class ViewPanel(QWidget):
     spread_changed = Signal(bool)
     style_changed = Signal(str)
     theme_changed = Signal(str)
+    part_changed = Signal(str, str)  # which number (chapter, juz, page), its style or 'auto'
 
     STYLES = (("indic", "أرقام هندية (١٢٣)"), ("western", "أرقام غربية (123)"), ("words", "كلمات (الأول)"))
 
     THEMES = (("light", "فاتح"), ("dark", "داكن"))
 
-    def __init__(self, spread, style, theme):
+    PARTS = (
+        ("chapter", "رقم السورة", True),
+        ("juz", "رقم الجزء والحزب", True),
+        ("page", "رقم الصفحة", False),  # ordinal words stop at 199
+    )
+
+    def __init__(self, spread, style, theme, parts=None):
         super().__init__()
+        parts = parts or {}
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("العرض"))
         self.pages = QButtonGroup(self)
@@ -822,6 +830,22 @@ class ViewPanel(QWidget):
             self.numbers.addButton(button)
             button.toggled.connect(lambda checked, value=value: checked and self.style_changed.emit(value))
             layout.addWidget(button)
+        layout.addSpacing(16)
+        layout.addWidget(QLabel("أرقام مخصصة"))
+        self.part_boxes = {}
+        for part, label, words_ok in self.PARTS:
+            row = QHBoxLayout()
+            box = QComboBox()
+            box.addItem("مثل الأرقام عامةً", AUTO)
+            for value, name in self.STYLES:
+                if words_ok or value != "words":
+                    box.addItem(name, value)
+            box.setCurrentIndex(max(0, box.findData(parts.get(part, AUTO))))
+            box.currentIndexChanged.connect(lambda _, part=part, box=box: self.part_changed.emit(part, box.currentData()))
+            row.addWidget(QLabel(label))
+            row.addWidget(box, 1)
+            layout.addLayout(row)
+            self.part_boxes[part] = box
         layout.addSpacing(16)
         layout.addWidget(QLabel("لون الصفحات"))
         self.colors = QButtonGroup(self)

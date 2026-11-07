@@ -53,5 +53,16 @@ def number_text(n, style="indic", feminine=False):
     return format_number(n, style)
 
 
+PARTS = ("chapter", "juz", "page")  # numbers that can be set apart from the general style
+AUTO = "auto"
+
+
+def effective_style(override, general, words_ok=True):
+    """The style for one kind of number: its own choice, or the general one when the choice is 'auto'.
+    Page numbers go up to 604, past what ordinal words cover, so they pass words_ok=False."""
+    style = override if override in STYLES else general
+    return style if style != "words" or words_ok else "indic"
+
+
 def next_style(style):
     return STYLES[(STYLES.index(style) + 1) % len(STYLES)]

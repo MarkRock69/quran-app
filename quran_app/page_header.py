@@ -45,14 +45,16 @@ class Header:
     chapter_number: str
 
 
-def header_for(info, chapter_name, style="indic"):
-    n = lambda value: number_text(value, style)  # noqa: E731
+def header_for(info, chapter_name, style="indic", juz_style=None, chapter_style=None):
+    """`juz_style` (for the juz' and hizb) and `chapter_style` default to `style`."""
+    juz_style, chapter_style = juz_style or style, chapter_style or style
+    n = lambda value: number_text(value, juz_style)  # noqa: E731
     right = f"الجزء {n(info.juz)}"
     if info.hizb is not None:
         fraction = _FRACTIONS.get(info.quarters)
         hizb = f"الحزب {n(info.hizb)}"
         right += f"{_COMMA} {fraction + ' ' if fraction else ''}{hizb}"
-    number = number_text(info.chapter, style, feminine=True)
-    if style == "words":
+    number = number_text(info.chapter, chapter_style, feminine=True)
+    if chapter_style == "words":
         number = f"({number})"  # a word needs brackets to read as the chapter's number
     return Header(right, chapter_name, number)

@@ -113,3 +113,22 @@ class FitTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PartStyleTests(unittest.TestCase):
+    def test_effective_style(self):
+        from quran_app.numbers import effective_style
+        self.assertEqual(effective_style("auto", "western"), "western")
+        self.assertEqual(effective_style("words", "western"), "words")
+        self.assertEqual(effective_style("auto", "words", words_ok=False), "indic")
+        self.assertEqual(effective_style("western", "words", words_ok=False), "western")
+
+    def test_header_parts_can_differ(self):
+        info = mushaf.page_info(2)
+        name = mushaf.chapter_name(info.chapter)
+        h = header_for(info, name, "indic", juz_style="western", chapter_style="words")
+        self.assertIn("1", h.right)
+        self.assertNotIn("\u0661", h.right)
+        self.assertTrue(h.chapter_number.startswith("(") and h.chapter_number.endswith(")"))
+        plain = header_for(info, name, "indic")
+        self.assertEqual(header_for(info, name, "indic", None, None), plain)
