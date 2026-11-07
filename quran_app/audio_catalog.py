@@ -116,6 +116,8 @@ class QueueItem(NamedTuple):
     number: int  # 0 for the basmala of the chapter
     path: Path
     group: int  # the steps of "next" and "previous": a basmala, or one verse with all its repetitions
+    pass_no: int = 0  # which playing of the whole passage (from 0)
+    repeat: int = 0  # which repetition of the verse (from 0)
 
 
 def build_queue(root, reciter_key, style, verses, basmala=True, verse_repeats=1, passage_repeats=1):
@@ -127,21 +129,64 @@ def build_queue(root, reciter_key, style, verses, basmala=True, verse_repeats=1,
     a missing basmala is not reported.
     """
     items, missing, reported, group = [], [], set(), 0
-    for _ in range(passage_repeats):
+    for pass_no in range(passage_repeats):
         for chapter, number in verses:
             if basmala and number == 1 and chapter not in NO_BASMALA:
                 path = verse_path(root, reciter_key, style, chapter, 0)
                 if path.exists():
-                    items.append(QueueItem(chapter, 0, path, group))
+                    items.append(QueueItem(chapter, 0, path, group, pass_no))
                     group += 1
             path = verse_path(root, reciter_key, style, chapter, number)
             if path.exists():
-                items.extend(QueueItem(chapter, number, path, group) for _ in range(verse_repeats))
+                items.extend(QueueItem(chapter, number, path, group, pass_no, repeat) for repeat in range(verse_repeats))
                 group += 1
             elif (chapter, number) not in reported:
                 reported.add((chapter, number))
                 missing.append((chapter, number))
     return items, missing
+
+
+def reposition(items, current):
+    """Where in a rebuilt queue `items` the item `current` (from the old queue) belongs, so playback can carry on
+    without a break after the repetition counts change. The same pass and repetition when they still exist,
+    otherwise the nearest ones. None if the verse is no longer in the queue."""
+    same = [(i, item) for i, item in enumerate(items) if (item.chapter, item.number) == (current.chapter, current.number)]
+    if not same:
+        return None
+    last_pass = max(item.pass_no for _, item in same)
+    pass_no = min(current.pass_no, last_pass)
+    in_pass = [(i, item) for i, item in same if item.pass_no == pass_no]
+    repeat = min(current.repeat, max(item.repeat for _, item in in_pass))
+    return next(i for i, item in in_pass if item.repeat == repeat)
+
+
+def queue_range(items):
+    """((chapter, verse), (chapter, verse)): the first and last verse of a queue, basmalas ignored; None if empty."""
+    verses = [(item.chapter, item.number) for item in items if item.number]
+    return (verses[0], verses[-1]) if verses else None
+
+
+def range_text(first, last, chapter_name, digits="indic"):
+    """'البقرة: الآيات ٢٥٥ – ٢٦٠' within one chapter, 'من البقرة ٢٥٥ إلى آل عمران ١٠' across chapters."""
+    from .numbers import format_number
+    n = lambda value: format_number(value, digits)  # noqa: E731
+    (c1, v1), (c2, v2) = first, last
+    if c1 == c2:
+        what = f"الآية {n(v1)}" if v1 == v2 else f"الآيات {n(v1)} – {n(v2)}"
+        return f"{chapter_name(c1)}: {what}"
+    return f"من {chapter_name(c1)} {n(v1)} إلى {chapter_name(c2)} {n(v2)}"
+
+
+def parse_repeat(text, highest=99):
+    """A repetition count typed in `text` (1 to `highest`, any digit style). Raises ValueError (message in Arabic)."""
+    from .navigation import normalize_digits
+    try:
+        value = int(normalize_digits(text.strip()))
+    except ValueError:
+        value = 0
+    if not 1 <= value <= highest:
+        raise ValueError(f"أدخل عدداً من 1 إلى {highest}")
+    return value
 
 
 def next_index(items, index):

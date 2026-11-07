@@ -11,9 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .audio_catalog import (
-    RECITERS, SPEED_PRESETS, STYLE_NAMES, available, build_queue, parse_speed, speed_text,
-)
+from .audio_catalog import RECITERS, STYLE_NAMES, available, build_queue, parse_repeat
 from .index_lists import Band, ChapterRow, RubRow, revelation_text, verse_count_text
 from .navigation import HINT, KINDS, normalize_digits
 from .passages import PASSAGE_KINDS
@@ -420,7 +418,7 @@ class AudioPanel(QWidget):
     """Choose a reciter, a style and a range of verses, and play it."""
 
     play_requested = Signal(list)  # a list of audio_catalog.QueueItem
-    speed_changed = Signal(float)
+    repeats_changed = Signal(int, int)  # each verse, the whole passage: valid values the user has just set
     MAX_REPEATS = 99
     MAX_QUEUE = 20000
 
@@ -457,26 +455,11 @@ class AudioPanel(QWidget):
             edit.setMaximumWidth(60)
             edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
             edit.returnPressed.connect(self.play)
+            edit.editingFinished.connect(self._repeats_edited)
             repeats.addWidget(QLabel(label))
             repeats.addWidget(edit)
         repeats.addStretch()
         layout.addLayout(repeats)
-
-        speed = QHBoxLayout()
-        self.speed = QComboBox()
-        self.speed.setEditable(True)
-        self.speed.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self.speed.setMaximumWidth(90)
-        for value in SPEED_PRESETS:
-            self.speed.addItem(speed_text(value), value)
-        self.speed.setCurrentIndex(self.speed.findData(1))
-        self._speed = 1.0
-        self.speed.activated.connect(lambda *_: self._apply_speed())
-        self.speed.lineEdit().editingFinished.connect(self._apply_speed)
-        speed.addWidget(QLabel("سرعة التشغيل"))
-        speed.addWidget(self.speed)
-        speed.addStretch()
-        layout.addLayout(speed)
 
         presets = QVBoxLayout()
         for label, preset in (
@@ -506,6 +489,7 @@ class AudioPanel(QWidget):
         layout.addWidget(self.status)
         layout.addStretch()
         self._fill_chapters()
+        self.last_build = None  # what was last played: (reciter, style, verses, basmala)
         self.rescan()
 
     def _boundary(self, layout, label):
@@ -642,43 +626,50 @@ class AudioPanel(QWidget):
 
     # ------------------------------------------------------------ playing
 
-    def set_speed(self, value):
-        """Show a remembered speed (the reader tells the player itself)."""
-        self._speed = value
-        self.speed.setCurrentText(speed_text(value))
-
-    def _apply_speed(self):
-        try:
-            value = parse_speed(self.speed.currentText())
-        except ValueError as error:
-            self.status.setText(str(error))
-            self.speed.setCurrentText(speed_text(self._speed))
-            return
-        self.speed.setCurrentText(speed_text(value))
-        if value != self._speed:
-            self._speed = value
-            self.speed_changed.emit(value)
-        self.status.setText("")
-
     def _repeats(self, edit, what):
         try:
-            value = int(normalize_digits(edit.text().strip()))
+            return parse_repeat(edit.text(), self.MAX_REPEATS)
         except ValueError:
-            value = 0
-        if not 1 <= value <= self.MAX_REPEATS:
             self.status.setText(f"{what}: أدخل عدداً من ١ إلى {format_number(self.MAX_REPEATS, self._digits())}")
             return None
-        return value
+
+    def repeats(self):
+        """(each verse, the whole passage) as set now, or None if either box holds something invalid."""
+        each = self._repeats(self.verse_repeats, "تكرار كل آية")
+        whole = self._repeats(self.passage_repeats, "تكرار المقطع") if each else None
+        return (each, whole) if each and whole else None
+
+    def set_repeats(self, each, whole):
+        """Show these counts (and announce them, so playback in progress follows)."""
+        self.verse_repeats.setText(str(each))
+        self.passage_repeats.setText(str(whole))
+        self._repeats_edited()
+
+    def _repeats_edited(self):
+        values = self.repeats()
+        if values:
+            self.status.setText("")
+            self.repeats_changed.emit(*values)
+
+    def rebuild(self, each, whole):
+        """The queue of the last played passage with new repetition counts, or None (nothing played, or too big)."""
+        if self.last_build is None:
+            return None
+        reciter, style, verses, basmala = self.last_build
+        if len(verses) * each * whole > self.MAX_QUEUE:
+            self.status.setText("المقطع مع التكرار أكبر من أن يُشغَّل دفعة واحدة، قلّل التكرار")
+            return None
+        return build_queue(self._root, reciter, style, verses, basmala, each, whole)[0]
 
     def play(self):
         reciter, style = self.reciter.currentData(), self.style.currentData()
         if reciter is None or style is None:
             self.status.setText("لا توجد تسجيلات. شغّل: python3 tools/fetch_audio.py")
             return
-        each = self._repeats(self.verse_repeats, "تكرار كل آية")
-        whole = self._repeats(self.passage_repeats, "تكرار المقطع") if each else None
-        if not each or not whole:
+        values = self.repeats()
+        if not values:
             return
+        each, whole = values
         (c1, v1), (c2, v2) = self._start(), self._end()
         try:
             passage = self._mushaf.passage("verse", f"{c1}:{v1}", f"{c2}:{v2}")
@@ -688,6 +679,7 @@ class AudioPanel(QWidget):
         if len(passage.verses) * each * whole > self.MAX_QUEUE:
             self.status.setText("المقطع مع التكرار أكبر من أن يُشغَّل دفعة واحدة، قلّل التكرار")
             return
+        self.last_build = (reciter, style, passage.verses, self.basmala.isChecked())
         queue, missing = build_queue(self._root, reciter, style, passage.verses, self.basmala.isChecked(), each, whole)
         if not queue:
             self.status.setText("لا توجد ملفات صوتية لهذا المقطع")

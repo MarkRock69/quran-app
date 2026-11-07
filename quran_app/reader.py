@@ -27,7 +27,8 @@ from PySide6.QtGui import (
     QPainter, QPainterPath, QPalette, QPen,
 )
 from PySide6.QtWidgets import (
-    QApplication, QDockWidget, QGridLayout, QHBoxLayout, QLabel, QMainWindow, QMenu, QPushButton, QSizePolicy, QToolButton, QWidget,
+    QApplication, QComboBox, QDockWidget, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMenu, QPushButton,
+    QSizePolicy, QToolButton, QVBoxLayout, QWidget,
 )
 
 from .banner import (
@@ -42,6 +43,7 @@ from .paths import AUDIO_DIR, FONTS_DIR, ensure_database
 from .settings import Settings
 from .themes import DEFAULT_THEME, THEMES
 from .audio import Player
+from .audio_catalog import SPEED_MAX, SPEED_MIN, SPEED_PRESETS, parse_repeat, parse_speed, queue_range, range_text, speed_text
 from .icons import SIZE, make_icon
 from .panels import (
     AudioPanel, BookmarksPanel, IndexPanel, JumpPanel, SearchPanel, ShortcutsPanel, SidePanel, TafsirPanel, ViewPanel,
@@ -429,12 +431,8 @@ class ReaderWindow(QMainWindow):
         self.player = Player()
         self.audio = AudioPanel(mushaf, AUDIO_DIR, self._reading_position, digits)
         self.audio.play_requested.connect(self.start_playing)
-        self.audio.speed_changed.connect(self.player.set_speed)
-        self.audio.speed_changed.connect(lambda value: settings.set("speed", value))
-        speed = settings.get("speed", 1.0)
-        if isinstance(speed, (int, float)) and 0.25 <= speed <= 3:
-            self.audio.set_speed(float(speed))
-            self.player.set_speed(float(speed))
+        self.audio.repeats_changed.connect(self._apply_repeats)
+        self._range = None  # (first verse, last verse) of what is playing
         self.player.verse_changed.connect(self.follow_verse)
         self.player.position_changed.connect(self._show_position)
         self.player.state_changed.connect(self._show_state)
@@ -509,6 +507,7 @@ class ReaderWindow(QMainWindow):
         self.view.show_state(self.spread, style, self.canvas.theme)
         self.search.refresh_numbers()
         self.audio.refresh_numbers()
+        self._show_range()
         self.index.refresh()
         self.tafsir.refresh()
         self.marks.refresh()
@@ -583,20 +582,98 @@ class ReaderWindow(QMainWindow):
             button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             button.clicked.connect(action)
             row.addWidget(button)
-        # three equal columns, so the controls sit exactly in the middle: [what is playing] [controls] [ ]
+        # speed and repetitions, editable while playing
+        settings_box = QWidget()
+        settings_row = QHBoxLayout(settings_box)
+        settings_row.setContentsMargins(0, 0, 0, 0)
+        self.speed_box = QComboBox()
+        self.speed_box.setEditable(True)
+        self.speed_box.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.speed_box.setMaximumWidth(80)
+        self.speed_box.setToolTip("سرعة التشغيل (من 0.25 إلى 3)")
+        for value in SPEED_PRESETS:
+            self.speed_box.addItem(speed_text(value), value)
+        saved = self.settings.get("speed", 1.0)
+        self._speed = float(saved) if isinstance(saved, (int, float)) and SPEED_MIN <= saved <= SPEED_MAX else 1.0
+        self.speed_box.setCurrentText(speed_text(self._speed))
+        self.player.set_speed(self._speed)
+        self.speed_box.activated.connect(lambda *_: self._speed_edited())
+        self.speed_box.lineEdit().editingFinished.connect(self._speed_edited)
+        self.verse_times, self.passage_times = QLineEdit("1"), QLineEdit("1")
+        self._repeat_values = (1, 1)
+        settings_row.addWidget(QLabel("السرعة"))
+        settings_row.addWidget(self.speed_box)
+        for label, edit in (("تكرار الآية", self.verse_times), ("تكرار المقطع", self.passage_times)):
+            edit.setMaximumWidth(44)
+            edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            edit.editingFinished.connect(self._bar_repeats_edited)
+            settings_row.addWidget(QLabel(label))
+            settings_row.addWidget(edit)
+        # the range and what is playing go to the right of the controls, speed and repetitions to the left
+        self.range_label = QLabel()
+        for label in (self.range_label, self.now_playing):
+            label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)  # never pushes
+        texts = QWidget()
+        column = QVBoxLayout(texts)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        column.addWidget(self.range_label)
+        column.addWidget(self.now_playing)
+        # three equal columns, so the controls sit exactly in the middle (the window is right-to-left,
+        # so the first column is on the right)
         holder = QWidget()
         grid = QGridLayout(holder)
         grid.setContentsMargins(0, 0, 0, 0)
-        self.now_playing.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)  # never pushes
-        grid.addWidget(self.now_playing, 0, 0)
+        grid.addWidget(texts, 0, 0)
         grid.addWidget(controls, 0, 1)
-        grid.addWidget(QWidget(), 0, 2)
-        for column in (0, 2):
-            grid.setColumnStretch(column, 1)
+        grid.addWidget(settings_box, 0, 2)
+        for column_number in (0, 2):
+            grid.setColumnStretch(column_number, 1)
         bar.addWidget(holder, 1)
         bar.hide()
 
+    def _speed_edited(self):
+        try:
+            value = parse_speed(self.speed_box.currentText())
+        except ValueError as error:
+            self.statusBar().showMessage(str(error), 3000)
+            self.speed_box.setCurrentText(speed_text(self._speed))
+            return
+        self.speed_box.setCurrentText(speed_text(value))
+        if value != self._speed:
+            self._speed = value
+            self.player.set_speed(value)
+            self.settings.set("speed", value)
+
+    def _bar_repeats_edited(self):
+        try:
+            each, whole = parse_repeat(self.verse_times.text()), parse_repeat(self.passage_times.text())
+        except ValueError as error:
+            self.statusBar().showMessage(str(error), 3000)
+            self.verse_times.setText(str(self._repeat_values[0]))
+            self.passage_times.setText(str(self._repeat_values[1]))
+            return
+        self.audio.set_repeats(each, whole)  # which announces it back to _apply_repeats
+
+    def _apply_repeats(self, each, whole):
+        """New repetition counts (from the side panel or this bar): show them, and follow them while playing."""
+        self._repeat_values = (each, whole)
+        self.verse_times.setText(str(each))
+        self.passage_times.setText(str(whole))
+        if self.player.active:
+            queue = self.audio.rebuild(each, whole)
+            if queue:
+                self.player.replace_queue(queue)
+
+    def _show_range(self):
+        if self._range is None:
+            self.range_label.clear()
+            return
+        self.range_label.setText(range_text(*self._range, self.mushaf.chapter_name, self.canvas.digits))
+
     def start_playing(self, queue):
+        self._range = queue_range(queue)
+        self._show_range()
         self.player.play_queue(queue)
         self.statusBar().show()
 

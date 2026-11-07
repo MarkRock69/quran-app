@@ -104,3 +104,43 @@ class SpeedTests(unittest.TestCase):
         for bad in ("0.24", "3.01", "abc", ""):
             with self.assertRaises(ValueError):
                 parse_speed(bad)
+
+
+class LiveChangeTests(unittest.TestCase):
+    def queue(self, each, whole, root=None):
+        import tempfile
+        from pathlib import Path
+        from quran_app.audio_catalog import build_queue, verse_path
+        root = Path(tempfile.mkdtemp())
+        for c, v in ((112, 1), (112, 2), (112, 3)):
+            path = verse_path(root, "minshawi", "murattal", c, v)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"x")
+        items, _ = build_queue(root, "minshawi", "murattal", [(112, 1), (112, 2), (112, 3)], True, each, whole)
+        return items
+
+    def test_reposition_keeps_the_verse_and_clamps_repeats(self):
+        from quran_app.audio_catalog import reposition
+        old = self.queue(3, 2)
+        current = next(i for i in old if (i.number, i.pass_no, i.repeat) == (2, 1, 2))
+        new = self.queue(2, 2)
+        item = new[reposition(new, current)]
+        self.assertEqual((item.number, item.pass_no, item.repeat), (2, 1, 1))
+        fewer = self.queue(3, 1)
+        item = fewer[reposition(fewer, current)]
+        self.assertEqual((item.number, item.pass_no, item.repeat), (2, 0, 2))
+        more = self.queue(5, 4)
+        item = more[reposition(more, current)]
+        self.assertEqual((item.number, item.pass_no, item.repeat), (2, 1, 2))
+
+    def test_range_and_text(self):
+        from quran_app.audio_catalog import parse_repeat, queue_range, range_text
+        self.assertEqual(queue_range(self.queue(1, 1)), ((112, 1), (112, 3)))
+        name = {2: "البقرة", 3: "آل عمران"}.get
+        self.assertEqual(range_text((2, 255), (2, 255), name, "western"), "البقرة: الآية 255")
+        self.assertEqual(range_text((2, 255), (2, 260), name, "western"), "البقرة: الآيات 255 – 260")
+        self.assertEqual(range_text((2, 255), (3, 10), name, "western"), "من البقرة 255 إلى آل عمران 10")
+        self.assertEqual(parse_repeat("٣"), 3)
+        for bad in ("0", "100", "x", ""):
+            with self.assertRaises(ValueError):
+                parse_repeat(bad)

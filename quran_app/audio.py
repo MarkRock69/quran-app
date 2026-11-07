@@ -4,7 +4,7 @@ is in audio_catalog.py and passages.py."""
 from PySide6.QtCore import QObject, QUrl, Signal
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
-from .audio_catalog import next_index, previous_index
+from .audio_catalog import next_index, previous_index, reposition
 
 
 class Player(QObject):
@@ -68,6 +68,16 @@ class Player(QObject):
         else:
             self._player.play()
             self.state_changed.emit(True)
+
+    def replace_queue(self, queue):
+        """Swap in a rebuilt queue (new repetition counts) without interrupting the sound being played."""
+        if not self.active:
+            return
+        index = reposition(queue, self._queue[self._index])
+        if index is None:
+            return
+        self._queue, self._index = list(queue), index
+        self.position_changed.emit(index + 1, len(queue))
 
     def stop(self):
         self._player.stop()
