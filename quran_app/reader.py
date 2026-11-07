@@ -2,7 +2,7 @@
 
     python3 -m quran_app.reader [--page 42] [--spread]
 
-Keys:  Ctrl+G = go to (page, chapter, juz', hizb, rub' or verse 2:255),  Ctrl+F = search,  Ctrl+I = the chapter and rub' lists,  Ctrl+T = tafsir of the clicked verse,
+Keys:  Ctrl+G = go to (page, chapter, juz', hizb, rub' or verse 2:255),  Ctrl+F = search,  Ctrl+I = the chapter and rub' lists,  Ctrl+T = tafsir of the clicked verse,  Ctrl+U = audio (Space = pause / resume),
        The ☰ button (top corner) opens the side panel, which has all of these as tabs.
        Ctrl+B = bookmark this page (the list is the second tab of the side panel),
        Left / PageDown / scroll down = next page,  Right / PageUp / scroll up = previous,
@@ -26,7 +26,9 @@ from PySide6.QtGui import (
     QAction, QColor, QFont, QFontDatabase, QFontMetricsF, QGuiApplication, QKeySequence,
     QPainter, QPainterPath, QPen,
 )
-from PySide6.QtWidgets import QApplication, QDockWidget, QMainWindow, QMenu, QToolButton, QWidget
+from PySide6.QtWidgets import (
+    QApplication, QDockWidget, QLabel, QMainWindow, QMenu, QPushButton, QToolButton, QWidget,
+)
 
 from .banner import (
     BANNER_FRAME, BASMALA, OVAL_HEIGHT, OVAL_LEFT, OVAL_RIGHT, SURAH_WORD, chapter_name_glyph, plan_frame,
@@ -36,10 +38,11 @@ from .bookmarks import DEFAULT_PATH, Bookmarks
 from .mushaf import PAGE_COUNT, Mushaf, hit_test, layout_page, spread_of
 from .numbers import format_number, next_style
 from .page_header import header_for
-from .paths import FONTS_DIR, ensure_database
+from .paths import AUDIO_DIR, FONTS_DIR, ensure_database
 from .settings import Settings
 from .themes import DEFAULT_THEME, THEMES
-from .panels import BookmarksPanel, IndexPanel, JumpPanel, SearchPanel, SidePanel, TafsirPanel, ViewPanel
+from .audio import Player
+from .panels import AudioPanel, BookmarksPanel, IndexPanel, JumpPanel, SearchPanel, SidePanel, TafsirPanel, ViewPanel
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE_ASPECT = 0.70  # width / height of one page
@@ -408,6 +411,14 @@ class ReaderWindow(QMainWindow):
         self.jump = JumpPanel(mushaf)
         self.tafsir = TafsirPanel(mushaf, fonts.text_family, digits, settings.get("tafsir_order"))
         self.tafsir.order_changed.connect(lambda keys: settings.set("tafsir_order", keys))
+        self.player = Player()
+        self.audio = AudioPanel(mushaf, AUDIO_DIR, self._reading_position)
+        self.audio.play_requested.connect(self.start_playing)
+        self.player.verse_changed.connect(self.follow_verse)
+        self.player.position_changed.connect(self._show_position)
+        self.player.state_changed.connect(self._show_state)
+        self.player.finished.connect(lambda: self.statusBar().hide())
+        self._build_transport()
         self.index = IndexPanel(mushaf, fonts.text_family, digits)
         self.marks = BookmarksPanel(bookmarks, mushaf, digits)
         self.view = ViewPanel(spread, self.canvas.number_style, self.canvas.theme)
@@ -423,13 +434,13 @@ class ReaderWindow(QMainWindow):
         self.canvas.menu_clicked.connect(self.toggle_side)
         self.canvas.verse_clicked.connect(self.pick_verse)
         self.side = QDockWidget("القائمة", self)
-        self.side.setWidget(SidePanel(self.search, self.jump, self.index, self.tafsir, self.marks, self.view))
+        self.side.setWidget(SidePanel(self.search, self.jump, self.index, self.tafsir, self.audio, self.marks, self.view))
         self.side.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetClosable)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.side)
         self.side.setMinimumWidth(500)
         self.side.hide()
         for keys, action in (("Ctrl+G", self.open_jump), ("Ctrl+F", self.open_search), ("Ctrl+B", self.toggle_bookmark), ("Ctrl+I", self.open_index),
-                              ("Ctrl+T", self.open_tafsir),
+                              ("Ctrl+T", self.open_tafsir), ("Ctrl+U", self.open_audio),
                               ("Escape", self.close_side)):
             QShortcut(QKeySequence(keys), self, activated=action)
         self.canvas.add_menu_button()
@@ -509,6 +520,57 @@ class ReaderWindow(QMainWindow):
         if not self.tafsir.has_verse():
             self.tafsir.set_verse(*self.mushaf.first_verse_of_page(self.page))
 
+    # ------------------------------------------------------------ audio
+
+    def _reading_position(self):
+        selection = self.canvas.selection
+        verse = self.mushaf.verse_of_glyph(selection[0]) if selection else None
+        return {"verse": verse, "page": self.page}
+
+    def _build_transport(self):
+        bar = self.statusBar()
+        bar.setSizeGripEnabled(False)
+        self.now_playing = QLabel()
+        self.pause_button = QPushButton("إيقاف مؤقت")
+        for label, action in (("السابق", self.player.previous), ("التالي", self.player.next), ("إيقاف", self.player.stop)):
+            button = QPushButton(label)
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            button.clicked.connect(action)
+            bar.addPermanentWidget(button)
+        self.pause_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.pause_button.clicked.connect(self.player.toggle)
+        bar.addPermanentWidget(self.pause_button)
+        bar.addWidget(self.now_playing, 1)
+        bar.hide()
+
+    def start_playing(self, queue):
+        self.player.play_queue(queue)
+        self.statusBar().show()
+
+    def follow_verse(self, chapter, number):
+        """While playing: show the verse being read (turning the page if needed) and select it."""
+        digits = self.canvas.digits
+        name = self.mushaf.chapter_name(chapter)
+        self._now = f"سُورَةُ {name}، " + ("البسملة" if number == 0 else f"آية {format_number(number, digits)}")
+        if not self.audio.follow.isChecked():
+            return
+        page = self.mushaf.page_of_verse(chapter, max(1, number))
+        if page not in self.canvas.pages:
+            self.go_to(page)
+        self.canvas.selection = self.mushaf.verse_cells(chapter, max(1, number)) if number else None
+        self.canvas.update()
+
+    def _show_position(self, index, total):
+        digits = self.canvas.digits
+        self.now_playing.setText(f"{getattr(self, '_now', '')}   ({format_number(index, digits)} من {format_number(total, digits)})")
+
+    def _show_state(self, playing):
+        self.pause_button.setText("إيقاف مؤقت" if playing else "متابعة")
+
+    def open_audio(self):
+        self.side.show()
+        self.side.widget().setCurrentWidget(self.audio)
+
     def open_index(self):
         self.side.show()
         self.side.widget().setCurrentWidget(self.index)
@@ -540,6 +602,8 @@ class ReaderWindow(QMainWindow):
             self.step(+1)
         elif key in (Qt.Key.Key_Right, Qt.Key.Key_PageUp):
             self.step(-1)
+        elif key == Qt.Key.Key_Space and self.player.active:
+            self.player.toggle()
         elif key == Qt.Key.Key_Home:
             self.go_to(1)
         elif key == Qt.Key.Key_End:

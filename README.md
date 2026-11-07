@@ -14,7 +14,7 @@ Planned stack: Python + Qt (PySide6, Qt Quick) with SQLite. Code uses the word
 3. **Mushaf page view** (page model done and tested; the Qt window is written but not yet run, see below)
 4. Navigation: jump box, search panel, bookmarks, chapter list and rub' list (written, first run pending)
 5. Tafsir side panel with the six sources in a column (written, first run pending; The Clear Qur'an is reserved, no download exists)
-6. Audio, with a selectable passage (download script and file catalog done; passage selector and player next)
+6. Audio with a selectable passage (done: downloader, passage selector, player; first run pending)
 7. Themes (light, dark) and the Arabic-Indic / Western digit toggle
 
 ## Build the database
@@ -109,7 +109,7 @@ names and the basmala are glyphs of the King Fahd font QCF2BSML.ttf (rerun
 `tools/fetch_fonts.py` once to get it; it skips what you already have). The ☰ button in the top corner opens the side panel, which has everything below
 as tabs (search, go to, bookmarks, view: one or two pages and the number style),
 so the keyboard is never required. Ctrl+G = go to a page, chapter, juz', hizb or rub' by number, or a verse as `2:255`
-(either digit style). The display tab also switches the pages between light and dark; the side panel follows your Qt theme. The tafsir sources can be dragged into any order; the order, the page colours and the number style are remembered in `~/.local/share/quran-app/user.db`. Click a verse on the page and its tafsir shows in the التفسير tab (Ctrl+T), with the six
+(either digit style). The display tab also switches the pages between light and dark; the side panel follows your Qt theme. The tafsir sources can be dragged into any order; the order, the page colours and the number style are remembered in `~/.local/share/quran-app/user.db`. The الصوت tab (Ctrl+U) plays any passage: pick the reciter and style, then a passage as verses (`2:255` to `3:10`, crossing chapters), chapters, juz', hizb, rub' or pages, "from" and "to" (leave "to" empty for one unit), or use the buttons for the selected verse, from it to the end of the chapter, the current page, chapter or juz'. A bar at the bottom has previous, next, pause (Space) and stop; the page follows the recitation. Click a verse on the page and its tafsir shows in the التفسير tab (Ctrl+T), with the six
 sources as a column beside the text; a text that covers several verses says so. Ctrl+I opens the chapter list (juz' bands, page, Meccan or Medinan, verse count)
 and the rub' list (circle showing how much of the hizb has passed, opening words,
 chapter and verse, page), laid out like the Quran Android app; choosing a row goes

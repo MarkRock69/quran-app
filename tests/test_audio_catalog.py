@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from quran_app.audio_catalog import (
-    RECITERS, file_name, flat_name, parse_md5, playlist, reciter, verse_path,
+    RECITERS, available, build_queue, file_name, flat_name, parse_md5, playlist, reciter, verse_path,
 )
 
 
@@ -56,6 +56,14 @@ class PlaylistTest(unittest.TestCase):
 
     def test_basmala_can_be_turned_off(self):
         self.assertEqual(self.play([(2, 1)], basmala=False)[0], ["002001.mp3"])
+
+    def test_queue_items_know_their_verse(self):
+        items, _ = build_queue(self.root, "minshawi", "murattal", [(2, 1), (2, 2)])
+        self.assertEqual([(i.chapter, i.number) for i in items], [(2, 0), (2, 1), (2, 2)])
+
+    def test_available_lists_only_what_is_on_disk(self):
+        self.assertEqual(available(self.root), {"minshawi": ["murattal"]})
+        self.assertEqual(available(self.root / "nothing"), {})
 
     def test_missing_verses_are_reported_but_missing_basmalas_are_not(self):
         names, missing = self.play([(114, 1), (114, 2)])

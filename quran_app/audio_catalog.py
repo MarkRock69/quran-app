@@ -10,6 +10,7 @@ On disk:  <audio folder, see paths.py>/<reciter>/<style>/SSSVVV.mp3
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 BASE_URL = "https://everyayah.com/data"
 ZIP_NAME = "000_versebyverse.zip"
@@ -83,14 +84,20 @@ def parse_md5(text):
     return result
 
 
-def playlist(root, reciter_key, style, verses, basmala=True):
-    """The files to play for `verses`, a list of (chapter, verse number) in order.
+class QueueItem(NamedTuple):
+    chapter: int
+    number: int  # 0 for the basmala of the chapter
+    path: Path
 
-    A chapter's basmala file is put before its first verse when that verse is reached from the
-    start of the chapter (not for chapters 1 and 9). Verses with no file on disk are left out
-    and returned in the second list.
+
+def build_queue(root, reciter_key, style, verses, basmala=True):
+    """What to play for `verses`, a list of (chapter, verse number) in order: ([QueueItem, ...], missing).
+
+    A chapter's basmala file is put before its first verse when the passage reaches that verse
+    (not for chapters 1 and 9). Verses with no file on disk are left out and returned in
+    `missing`; a missing basmala is not reported.
     """
-    paths, missing = [], []
+    items, missing = [], []
     for chapter, number in verses:
         wanted = []
         if basmala and number == 1 and chapter not in NO_BASMALA:
@@ -99,7 +106,26 @@ def playlist(root, reciter_key, style, verses, basmala=True):
         for item in wanted:
             path = verse_path(root, reciter_key, style, *item)
             if path.exists():
-                paths.append(path)
-            elif item[1] != 0:  # a missing basmala is not worth reporting
+                items.append(QueueItem(item[0], item[1], path))
+            elif item[1] != 0:
                 missing.append(item)
-    return paths, missing
+    return items, missing
+
+
+def playlist(root, reciter_key, style, verses, basmala=True):
+    """Like build_queue, but just the paths."""
+    items, missing = build_queue(root, reciter_key, style, verses, basmala)
+    return [item.path for item in items], missing
+
+
+def available(root):
+    """{reciter key: [styles with downloaded files]}, only for what is on disk."""
+    found = {}
+    for item in RECITERS:
+        styles = [
+            style for style in item.recordings
+            if next(folder(root, item.key, style).glob("[0-9][0-9][0-9][0-9][0-9][0-9].mp3"), None) is not None
+        ]
+        if styles:
+            found[item.key] = styles
+    return found

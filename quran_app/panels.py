@@ -11,8 +11,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .audio_catalog import RECITERS, STYLE_NAMES, available, build_queue
 from .index_lists import Band, ChapterRow, RubRow, revelation_text, verse_count_text
 from .navigation import HINT, KINDS
+from .passages import PASSAGE_KINDS
 from .numbers import format_number
 from .page_header import header_for
 from .tafsir import order_sources
@@ -410,6 +412,157 @@ class TafsirPanel(QWidget):
         return f'<p style="color:{MUTED_COLOR}" dir="rtl">{label}</p>' + found.html
 
 
+class AudioPanel(QWidget):
+    """Choose a reciter, a style and any passage, and play it."""
+
+    play_requested = Signal(list)  # a list of audio_catalog.QueueItem
+
+    def __init__(self, mushaf, audio_root, context):
+        """`context()` gives the reader's position: {'verse': (c, v) or None, 'page': n}."""
+        super().__init__()
+        self._mushaf, self._root, self._context = mushaf, audio_root, context
+        layout = QVBoxLayout(self)
+        self.note = QLabel()
+        self.note.setWordWrap(True)
+        layout.addWidget(self.note)
+
+        row = QHBoxLayout()
+        self.reciter = QComboBox()
+        self.style = QComboBox()
+        self.reciter.currentIndexChanged.connect(self._fill_styles)
+        row.addWidget(self.reciter, 1)
+        row.addWidget(self.style)
+        layout.addLayout(row)
+
+        layout.addWidget(QLabel("المقطع المراد تشغيله"))
+        self.kind = QComboBox()
+        for key, name in PASSAGE_KINDS.items():
+            self.kind.addItem(name, key)
+        layout.addWidget(self.kind)
+        fields = QHBoxLayout()
+        self.first = QLineEdit()
+        self.last = QLineEdit()
+        self.first.setPlaceholderText("من")
+        self.last.setPlaceholderText("إلى (اتركه فارغاً لتشغيل الأول فقط)")
+        for edit in (self.first, self.last):
+            edit.returnPressed.connect(self.play)
+        fields.addWidget(self.first)
+        fields.addWidget(self.last, 2)
+        layout.addLayout(fields)
+        self.hint = QLabel("الآيات: ٢:٢٥٥ — والباقي أرقام، مثل ٣ إلى ٥")
+        self.hint.setStyleSheet(f"color: {MUTED_COLOR}")
+        self.hint.setWordWrap(True)
+        layout.addWidget(self.hint)
+
+        presets = QVBoxLayout()
+        for label, preset in (
+            ("الآية المحددة", self._selected_verse),
+            ("من الآية المحددة إلى آخر السورة", self._selected_to_chapter_end),
+            ("الصفحة الحالية", self._current_page),
+            ("السورة الحالية", self._current_chapter),
+            ("الجزء الحالي", self._current_juz),
+        ):
+            button = QPushButton(label)
+            button.clicked.connect(preset)
+            presets.addWidget(button)
+        layout.addLayout(presets)
+
+        self.basmala = QCheckBox("تشغيل البسملة في أول كل سورة")
+        self.basmala.setChecked(True)
+        self.follow = QCheckBox("متابعة الصفحة أثناء التشغيل")
+        self.follow.setChecked(True)
+        layout.addWidget(self.basmala)
+        layout.addWidget(self.follow)
+        button = QPushButton("تشغيل")
+        button.clicked.connect(self.play)
+        layout.addWidget(button)
+        self.status = QLabel()
+        self.status.setWordWrap(True)
+        self.status.setStyleSheet(f"color: {MATCH_COLOR}")
+        layout.addWidget(self.status)
+        layout.addStretch()
+        self.rescan()
+
+    def rescan(self):
+        """Look at which recordings are on disk (the reader calls this when the tab is shown)."""
+        found = available(self._root)
+        current = self.reciter.currentData()
+        self.reciter.blockSignals(True)
+        self.reciter.clear()
+        for item in RECITERS:
+            if item.key in found:
+                self.reciter.addItem(item.name_ar, item.key)
+        index = self.reciter.findData(current)
+        self.reciter.setCurrentIndex(max(0, index))
+        self.reciter.blockSignals(False)
+        self._found = found
+        self._fill_styles()
+        self.note.setText("" if found else "لم تُنزَّل التسجيلات بعد. شغّل: python3 tools/fetch_audio.py")
+
+    def showEvent(self, event):
+        self.rescan()
+        super().showEvent(event)
+
+    def _fill_styles(self, *_):
+        current = self.style.currentData()
+        self.style.clear()
+        for style in self._found.get(self.reciter.currentData(), ()):
+            self.style.addItem(STYLE_NAMES[style], style)
+        self.style.setCurrentIndex(max(0, self.style.findData(current)))
+
+    # ------------------------------------------------------------ presets
+
+    def _set(self, kind, first, last=""):
+        self.kind.setCurrentIndex(self.kind.findData(kind))
+        self.first.setText(first)
+        self.last.setText(last)
+        self.status.setText("")
+
+    def _selected_verse(self):
+        verse = self._context()["verse"]
+        if verse:
+            self._set("verse", f"{verse[0]}:{verse[1]}")
+        else:
+            self.status.setText("حدّد آية في الصفحة أولاً (بالضغط عليها)")
+
+    def _selected_to_chapter_end(self):
+        verse = self._context()["verse"]
+        if not verse:
+            self.status.setText("حدّد آية في الصفحة أولاً (بالضغط عليها)")
+            return
+        chapter = verse[0]
+        count = self._mushaf.passage("chapter", str(chapter)).verses[-1][1]
+        self._set("verse", f"{chapter}:{verse[1]}", f"{chapter}:{count}")
+
+    def _current_page(self):
+        self._set("page", str(self._context()["page"]))
+
+    def _current_chapter(self):
+        self._set("chapter", str(self._mushaf.first_verse_of_page(self._context()["page"])[0]))
+
+    def _current_juz(self):
+        self._set("juz", str(self._mushaf.page_info(self._context()["page"]).juz))
+
+    # ------------------------------------------------------------ playing
+
+    def play(self):
+        reciter, style = self.reciter.currentData(), self.style.currentData()
+        if reciter is None or style is None:
+            self.status.setText("لا توجد تسجيلات. شغّل: python3 tools/fetch_audio.py")
+            return
+        try:
+            passage = self._mushaf.passage(self.kind.currentData(), self.first.text(), self.last.text())
+        except ValueError as error:
+            self.status.setText(str(error))
+            return
+        queue, missing = build_queue(self._root, reciter, style, passage.verses, self.basmala.isChecked())
+        if not queue:
+            self.status.setText("لا توجد ملفات صوتية لهذا المقطع")
+            return
+        self.status.setText(f"{len(missing)} آية بلا ملف صوتي، وقد تُخطّيت" if missing else "")
+        self.play_requested.emit(queue)
+
+
 class _PageList(QListWidget):
     """A list of bookmarked pages; Delete removes the selected one."""
 
@@ -565,14 +718,16 @@ class ViewPanel(QWidget):
 class SidePanel(QTabWidget):
     """Everything the reader can do besides turning pages, in one place."""
 
-    def __init__(self, search, jump, index, tafsir, bookmarks, view):
+    def __init__(self, search, jump, index, tafsir, audio, bookmarks, view):
         super().__init__()
         self.search, self.jump, self.index = search, jump, index
         self.tafsir, self.bookmarks, self.view = tafsir, bookmarks, view
         self.setElideMode(Qt.TextElideMode.ElideNone)
+        self.tabBar().setStyleSheet("QTabBar::tab { padding: 6px 8px; }")  # seven tabs have to fit
         self.addTab(search, "بحث")
         self.addTab(jump, "اذهب")
         self.addTab(index, "الفهرس")
         self.addTab(tafsir, "التفسير")
+        self.addTab(audio, "الصوت")
         self.addTab(bookmarks, "العلامات")
         self.addTab(view, "العرض")

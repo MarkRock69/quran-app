@@ -16,6 +16,7 @@ from typing import Optional
 
 from .index_lists import chapter_index, rub_index
 from . import tafsir
+from .passages import resolve
 from .navigation import KINDS, Jump, parse_jump
 from .numbers import format_number
 from .page_header import PageInfo, rub_progress
@@ -134,6 +135,10 @@ class Mushaf:
     def rub_index(self):
         """Bands and rows of the rub' list (see index_lists.py)."""
         return rub_index(self._connection)
+
+    def passage(self, kind, first_text, last_text=""):
+        """The verses of a passage to play (see passages.py). Raises ValueError, message in Arabic."""
+        return resolve(self._connection, kind, first_text, last_text)
 
     def tafsir_sources(self):
         return tafsir.sources(self._connection)
