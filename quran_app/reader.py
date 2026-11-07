@@ -20,14 +20,14 @@ import argparse
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
     QPolygonF, QShortcut,
     QAction, QColor, QFont, QFontDatabase, QFontMetricsF, QGuiApplication, QKeySequence,
-    QPainter, QPainterPath, QPen,
+    QPainter, QPainterPath, QPalette, QPen,
 )
 from PySide6.QtWidgets import (
-    QApplication, QDockWidget, QLabel, QMainWindow, QMenu, QPushButton, QToolButton, QWidget,
+    QApplication, QDockWidget, QHBoxLayout, QLabel, QMainWindow, QMenu, QPushButton, QToolButton, QWidget,
 )
 
 from .banner import (
@@ -42,6 +42,7 @@ from .paths import AUDIO_DIR, FONTS_DIR, ensure_database
 from .settings import Settings
 from .themes import DEFAULT_THEME, THEMES
 from .audio import Player
+from .icons import SIZE, make_icon
 from .panels import AudioPanel, BookmarksPanel, IndexPanel, JumpPanel, SearchPanel, SidePanel, TafsirPanel, ViewPanel
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -412,7 +413,7 @@ class ReaderWindow(QMainWindow):
         self.tafsir = TafsirPanel(mushaf, fonts.text_family, digits, settings.get("tafsir_order"))
         self.tafsir.order_changed.connect(lambda keys: settings.set("tafsir_order", keys))
         self.player = Player()
-        self.audio = AudioPanel(mushaf, AUDIO_DIR, self._reading_position)
+        self.audio = AudioPanel(mushaf, AUDIO_DIR, self._reading_position, digits)
         self.audio.play_requested.connect(self.start_playing)
         self.player.verse_changed.connect(self.follow_verse)
         self.player.position_changed.connect(self._show_position)
@@ -481,6 +482,7 @@ class ReaderWindow(QMainWindow):
         self.settings.set("number_style", style)
         self.view.show_state(self.spread, style, self.canvas.theme)
         self.search.refresh_numbers()
+        self.audio.refresh_numbers()
         self.index.refresh()
         self.tafsir.refresh()
         self.marks.refresh()
@@ -528,18 +530,30 @@ class ReaderWindow(QMainWindow):
         return {"verse": verse, "page": self.page}
 
     def _build_transport(self):
+        """The playback bar: icons only, in the fixed order  ◀ next · pause/play · stop · previous ▶."""
         bar = self.statusBar()
         bar.setSizeGripEnabled(False)
         self.now_playing = QLabel()
-        self.pause_button = QPushButton("إيقاف مؤقت")
-        for label, action in (("السابق", self.player.previous), ("التالي", self.player.next), ("إيقاف", self.player.stop)):
-            button = QPushButton(label)
+        color = self.palette().color(QPalette.ColorRole.WindowText)
+        self._icons = {name: make_icon(name, color) for name in ("left", "right", "play", "pause", "stop")}
+        controls = QWidget()
+        controls.setLayoutDirection(Qt.LayoutDirection.LeftToRight)  # keep the order whatever the language
+        row = QHBoxLayout(controls)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.pause_button = QPushButton()
+        for button, icon, tip, action in (
+            (QPushButton(), "left", "الآية التالية", self.player.next),
+            (self.pause_button, "pause", "إيقاف مؤقت", self.player.toggle),
+            (QPushButton(), "stop", "إيقاف", self.player.stop),
+            (QPushButton(), "right", "الآية السابقة", self.player.previous),
+        ):
+            button.setIcon(self._icons[icon])
+            button.setIconSize(QSize(SIZE, SIZE))
+            button.setToolTip(tip)
             button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             button.clicked.connect(action)
-            bar.addPermanentWidget(button)
-        self.pause_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.pause_button.clicked.connect(self.player.toggle)
-        bar.addPermanentWidget(self.pause_button)
+            row.addWidget(button)
+        bar.addPermanentWidget(controls)
         bar.addWidget(self.now_playing, 1)
         bar.hide()
 
@@ -565,7 +579,8 @@ class ReaderWindow(QMainWindow):
         self.now_playing.setText(f"{getattr(self, '_now', '')}   ({format_number(index, digits)} من {format_number(total, digits)})")
 
     def _show_state(self, playing):
-        self.pause_button.setText("إيقاف مؤقت" if playing else "متابعة")
+        self.pause_button.setIcon(self._icons["pause" if playing else "play"])
+        self.pause_button.setToolTip("إيقاف مؤقت" if playing else "متابعة")
 
     def open_audio(self):
         self.side.show()

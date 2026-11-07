@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 
 from .audio_catalog import RECITERS, STYLE_NAMES, available, build_queue
 from .index_lists import Band, ChapterRow, RubRow, revelation_text, verse_count_text
-from .navigation import HINT, KINDS
+from .navigation import HINT, KINDS, normalize_digits
 from .passages import PASSAGE_KINDS
 from .numbers import format_number
 from .page_header import header_for
@@ -413,14 +413,16 @@ class TafsirPanel(QWidget):
 
 
 class AudioPanel(QWidget):
-    """Choose a reciter, a style and any passage, and play it."""
+    """Choose a reciter, a style and a range of verses, and play it."""
 
     play_requested = Signal(list)  # a list of audio_catalog.QueueItem
+    MAX_REPEATS = 99
+    MAX_QUEUE = 20000
 
-    def __init__(self, mushaf, audio_root, context):
+    def __init__(self, mushaf, audio_root, context, digits=lambda: "indic"):
         """`context()` gives the reader's position: {'verse': (c, v) or None, 'page': n}."""
         super().__init__()
-        self._mushaf, self._root, self._context = mushaf, audio_root, context
+        self._mushaf, self._root, self._context, self._digits = mushaf, audio_root, context, digits
         layout = QVBoxLayout(self)
         self.note = QLabel()
         self.note.setWordWrap(True)
@@ -435,24 +437,25 @@ class AudioPanel(QWidget):
         layout.addLayout(row)
 
         layout.addWidget(QLabel("المقطع المراد تشغيله"))
-        self.kind = QComboBox()
-        for key, name in PASSAGE_KINDS.items():
-            self.kind.addItem(name, key)
-        layout.addWidget(self.kind)
-        fields = QHBoxLayout()
-        self.first = QLineEdit()
-        self.last = QLineEdit()
-        self.first.setPlaceholderText("من")
-        self.last.setPlaceholderText("إلى (اتركه فارغاً لتشغيل الأول فقط)")
-        for edit in (self.first, self.last):
+        self.from_chapter, self.from_verse = self._boundary(layout, "من")
+        self.to_chapter, self.to_verse = self._boundary(layout, "إلى")
+        self.from_chapter.currentIndexChanged.connect(lambda *_: self._chapter_changed(True))
+        self.to_chapter.currentIndexChanged.connect(lambda *_: self._chapter_changed(False))
+        self.from_verse.currentIndexChanged.connect(self._keep_order)
+        self._fill_verses(self.from_verse, 1, 1)
+        self._fill_verses(self.to_verse, 1, 1)
+
+        repeats = QHBoxLayout()
+        self.verse_repeats = QLineEdit("1")
+        self.passage_repeats = QLineEdit("1")
+        for label, edit in (("تكرار كل آية", self.verse_repeats), ("تكرار المقطع", self.passage_repeats)):
+            edit.setMaximumWidth(60)
+            edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
             edit.returnPressed.connect(self.play)
-        fields.addWidget(self.first)
-        fields.addWidget(self.last, 2)
-        layout.addLayout(fields)
-        self.hint = QLabel("الآيات: ٢:٢٥٥ — والباقي أرقام، مثل ٣ إلى ٥")
-        self.hint.setStyleSheet(f"color: {MUTED_COLOR}")
-        self.hint.setWordWrap(True)
-        layout.addWidget(self.hint)
+            repeats.addWidget(QLabel(label))
+            repeats.addWidget(edit)
+        repeats.addStretch()
+        layout.addLayout(repeats)
 
         presets = QVBoxLayout()
         for label, preset in (
@@ -481,7 +484,78 @@ class AudioPanel(QWidget):
         self.status.setStyleSheet(f"color: {MATCH_COLOR}")
         layout.addWidget(self.status)
         layout.addStretch()
+        self._fill_chapters()
         self.rescan()
+
+    def _boundary(self, layout, label):
+        row = QHBoxLayout()
+        chapter, verse = QComboBox(), QComboBox()
+        row.addWidget(QLabel(label))
+        row.addWidget(chapter, 3)
+        row.addWidget(verse, 1)
+        layout.addLayout(row)
+        return chapter, verse
+
+    # ------------------------------------------------------------ dropdowns
+
+    def _fill_chapters(self):
+        """Fill (or relabel, after a change of digits) the chapter dropdowns as 'number - name'."""
+        digits = self._digits()
+        for box in (self.from_chapter, self.to_chapter):
+            current = box.currentData() or 1
+            box.blockSignals(True)
+            box.clear()
+            for chapter in range(1, 115):
+                box.addItem(f"{format_number(chapter, digits)} - {self._mushaf.chapter_name(chapter)}", chapter)
+            box.setCurrentIndex(current - 1)
+            box.blockSignals(False)
+
+    def _fill_verses(self, box, chapter, selected):
+        digits = self._digits()
+        box.blockSignals(True)
+        box.clear()
+        for verse in range(1, self._mushaf.verse_count(chapter) + 1):
+            box.addItem(format_number(verse, digits), verse)
+        box.setCurrentIndex(min(selected, box.count()) - 1)
+        box.blockSignals(False)
+
+    def refresh_numbers(self):
+        for chapter_box, verse_box in ((self.from_chapter, self.from_verse), (self.to_chapter, self.to_verse)):
+            verse = verse_box.currentData() or 1
+            self._fill_verses(verse_box, chapter_box.currentData(), verse)
+        self._fill_chapters()
+
+    def _start(self):
+        return (self.from_chapter.currentData(), self.from_verse.currentData())
+
+    def _end(self):
+        return (self.to_chapter.currentData(), self.to_verse.currentData())
+
+    def _chapter_changed(self, is_from):
+        chapter_box, verse_box = (self.from_chapter, self.from_verse) if is_from else (self.to_chapter, self.to_verse)
+        self._fill_verses(verse_box, chapter_box.currentData(), 1)
+        if is_from and self._end() < self._start():
+            self._set_end(*self._start())
+        self._keep_order()
+
+    def _keep_order(self, *_):
+        """The end of the passage is never before its start."""
+        if self._end() < self._start():
+            self._set_end(*self._start())
+
+    def _set_end(self, chapter, verse):
+        self.to_chapter.blockSignals(True)
+        self.to_chapter.setCurrentIndex(chapter - 1)
+        self.to_chapter.blockSignals(False)
+        self._fill_verses(self.to_verse, chapter, verse)
+
+    def _set_start(self, chapter, verse):
+        self.from_chapter.blockSignals(True)
+        self.from_chapter.setCurrentIndex(chapter - 1)
+        self.from_chapter.blockSignals(False)
+        self._fill_verses(self.from_verse, chapter, verse)
+
+    # ------------------------------------------------------------ recordings
 
     def rescan(self):
         """Look at which recordings are on disk (the reader calls this when the tab is shown)."""
@@ -506,16 +580,18 @@ class AudioPanel(QWidget):
     def _fill_styles(self, *_):
         current = self.style.currentData()
         self.style.clear()
-        for style in self._found.get(self.reciter.currentData(), ()):
+        styles = self._found.get(self.reciter.currentData(), ())
+        for style in styles:
             self.style.addItem(STYLE_NAMES[style], style)
         self.style.setCurrentIndex(max(0, self.style.findData(current)))
+        self.style.setVisible(len(styles) > 1)  # a reciter with one style (Ali Jabir) needs no choice
 
     # ------------------------------------------------------------ presets
 
     def _set(self, kind, first, last=""):
-        self.kind.setCurrentIndex(self.kind.findData(kind))
-        self.first.setText(first)
-        self.last.setText(last)
+        passage = self._mushaf.passage(kind, first, last)
+        self._set_start(*passage.first)
+        self._set_end(*passage.last)
         self.status.setText("")
 
     def _selected_verse(self):
@@ -545,17 +621,35 @@ class AudioPanel(QWidget):
 
     # ------------------------------------------------------------ playing
 
+    def _repeats(self, edit, what):
+        try:
+            value = int(normalize_digits(edit.text().strip()))
+        except ValueError:
+            value = 0
+        if not 1 <= value <= self.MAX_REPEATS:
+            self.status.setText(f"{what}: أدخل عدداً من ١ إلى {format_number(self.MAX_REPEATS, self._digits())}")
+            return None
+        return value
+
     def play(self):
         reciter, style = self.reciter.currentData(), self.style.currentData()
         if reciter is None or style is None:
             self.status.setText("لا توجد تسجيلات. شغّل: python3 tools/fetch_audio.py")
             return
+        each = self._repeats(self.verse_repeats, "تكرار كل آية")
+        whole = self._repeats(self.passage_repeats, "تكرار المقطع") if each else None
+        if not each or not whole:
+            return
+        (c1, v1), (c2, v2) = self._start(), self._end()
         try:
-            passage = self._mushaf.passage(self.kind.currentData(), self.first.text(), self.last.text())
+            passage = self._mushaf.passage("verse", f"{c1}:{v1}", f"{c2}:{v2}")
         except ValueError as error:
             self.status.setText(str(error))
             return
-        queue, missing = build_queue(self._root, reciter, style, passage.verses, self.basmala.isChecked())
+        if len(passage.verses) * each * whole > self.MAX_QUEUE:
+            self.status.setText("المقطع مع التكرار أكبر من أن يُشغَّل دفعة واحدة، قلّل التكرار")
+            return
+        queue, missing = build_queue(self._root, reciter, style, passage.verses, self.basmala.isChecked(), each, whole)
         if not queue:
             self.status.setText("لا توجد ملفات صوتية لهذا المقطع")
             return

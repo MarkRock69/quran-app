@@ -88,28 +88,55 @@ class QueueItem(NamedTuple):
     chapter: int
     number: int  # 0 for the basmala of the chapter
     path: Path
+    group: int  # the steps of "next" and "previous": a basmala, or one verse with all its repetitions
 
 
-def build_queue(root, reciter_key, style, verses, basmala=True):
+def build_queue(root, reciter_key, style, verses, basmala=True, verse_repeats=1, passage_repeats=1):
     """What to play for `verses`, a list of (chapter, verse number) in order: ([QueueItem, ...], missing).
 
-    A chapter's basmala file is put before its first verse when the passage reaches that verse
-    (not for chapters 1 and 9). Verses with no file on disk are left out and returned in
-    `missing`; a missing basmala is not reported.
+    The whole passage is played `passage_repeats` times and each verse `verse_repeats` times in a row.
+    A chapter's basmala file is put (once) before its first verse when the passage reaches that verse
+    (not for chapters 1 and 9). Verses with no file on disk are left out and listed once in `missing`;
+    a missing basmala is not reported.
     """
-    items, missing = [], []
-    for chapter, number in verses:
-        wanted = []
-        if basmala and number == 1 and chapter not in NO_BASMALA:
-            wanted.append((chapter, 0))
-        wanted.append((chapter, number))
-        for item in wanted:
-            path = verse_path(root, reciter_key, style, *item)
+    items, missing, reported, group = [], [], set(), 0
+    for _ in range(passage_repeats):
+        for chapter, number in verses:
+            if basmala and number == 1 and chapter not in NO_BASMALA:
+                path = verse_path(root, reciter_key, style, chapter, 0)
+                if path.exists():
+                    items.append(QueueItem(chapter, 0, path, group))
+                    group += 1
+            path = verse_path(root, reciter_key, style, chapter, number)
             if path.exists():
-                items.append(QueueItem(item[0], item[1], path))
-            elif item[1] != 0:
-                missing.append(item)
+                items.extend(QueueItem(chapter, number, path, group) for _ in range(verse_repeats))
+                group += 1
+            elif (chapter, number) not in reported:
+                reported.add((chapter, number))
+                missing.append((chapter, number))
     return items, missing
+
+
+def next_index(items, index):
+    """Where "next" goes from item `index`: the first item of the next group, or None at the end."""
+    group = items[index].group
+    for position in range(index + 1, len(items)):
+        if items[position].group != group:
+            return position
+    return None
+
+
+def previous_index(items, index):
+    """Where "previous" goes: the start of the group before the current one (the start of the queue at the first)."""
+    start = index
+    while start > 0 and items[start - 1].group == items[index].group:
+        start -= 1
+    if start == 0:
+        return 0
+    before = start - 1
+    while before > 0 and items[before - 1].group == items[start - 1].group:
+        before -= 1
+    return before
 
 
 def playlist(root, reciter_key, style, verses, basmala=True):

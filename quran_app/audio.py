@@ -4,6 +4,8 @@ is in audio_catalog.py and passages.py."""
 from PySide6.QtCore import QObject, QUrl, Signal
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
+from .audio_catalog import next_index, previous_index
+
 
 class Player(QObject):
     verse_changed = Signal(int, int)  # chapter, verse number (0 = the basmala of the chapter)
@@ -17,7 +19,7 @@ class Player(QObject):
         self._output = QAudioOutput(self)
         self._player.setAudioOutput(self._output)
         self._player.mediaStatusChanged.connect(self._status)
-        self._player.errorOccurred.connect(lambda *_: self.next())  # a file that will not play is skipped
+        self._player.errorOccurred.connect(lambda *_: self.active and self._go(self._index + 1))  # skip a bad file
         self._queue = []
         self._index = -1
         self.active = False
@@ -41,12 +43,15 @@ class Player(QObject):
         self.position_changed.emit(index + 1, len(self._queue))
 
     def next(self):
+        """The next verse (past any repetitions of this one); the end of the queue stops."""
         if self.active:
-            self._go(self._index + 1)
+            target = next_index(self._queue, self._index)
+            self.stop() if target is None else self._go(target)
 
     def previous(self):
+        """The start of the verse before this one."""
         if self.active:
-            self._go(max(0, self._index - 1))
+            self._go(previous_index(self._queue, self._index))
 
     def toggle(self):
         if not self.active:
@@ -66,5 +71,5 @@ class Player(QObject):
         self.finished.emit()
 
     def _status(self, status):
-        if status == QMediaPlayer.MediaStatus.EndOfMedia:
-            self.next()
+        if status == QMediaPlayer.MediaStatus.EndOfMedia and self.active:
+            self._go(self._index + 1)  # the next file, which may be another repetition

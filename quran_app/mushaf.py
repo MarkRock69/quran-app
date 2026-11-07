@@ -86,6 +86,7 @@ class Mushaf:
             for row in self._connection.execute("SELECT id, chapter, number FROM verses")
         }
         self._chapter_names = dict(self._connection.execute("SELECT id, name_ar FROM chapters"))
+        self._verse_counts = dict(self._connection.execute("SELECT id, verse_count FROM chapters"))
         self._words = lru_cache(maxsize=512)(self._load_words)
 
     def close(self):
@@ -93,6 +94,9 @@ class Mushaf:
 
     def chapter_name(self, chapter):
         return self._chapter_names[chapter]
+
+    def verse_count(self, chapter):
+        return self._verse_counts[chapter]
 
     @lru_cache(maxsize=64)
     def page(self, number):

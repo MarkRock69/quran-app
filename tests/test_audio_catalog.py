@@ -3,7 +3,8 @@ import unittest
 from pathlib import Path
 
 from quran_app.audio_catalog import (
-    RECITERS, available, build_queue, file_name, flat_name, parse_md5, playlist, reciter, verse_path,
+    RECITERS, available, build_queue, file_name, flat_name, next_index, parse_md5, playlist, previous_index, reciter,
+    verse_path,
 )
 
 
@@ -60,6 +61,22 @@ class PlaylistTest(unittest.TestCase):
     def test_queue_items_know_their_verse(self):
         items, _ = build_queue(self.root, "minshawi", "murattal", [(2, 1), (2, 2)])
         self.assertEqual([(i.chapter, i.number) for i in items], [(2, 0), (2, 1), (2, 2)])
+
+    def test_repeats(self):
+        items, _ = build_queue(self.root, "minshawi", "murattal", [(2, 1), (2, 2)], verse_repeats=2, passage_repeats=2)
+        self.assertEqual([(i.number) for i in items], [0, 1, 1, 2, 2, 0, 1, 1, 2, 2])  # basmala once per pass and verse
+
+    def test_next_and_previous_move_by_verse_not_by_repetition(self):
+        items, _ = build_queue(self.root, "minshawi", "murattal", [(2, 1), (2, 2)], verse_repeats=2)
+        # items: basmala, 1, 1, 2, 2  (groups 0, 1, 1, 2, 2)
+        self.assertEqual(next_index(items, 0), 1)
+        self.assertEqual(next_index(items, 1), 3)
+        self.assertEqual(next_index(items, 2), 3)
+        self.assertIsNone(next_index(items, 4))
+        self.assertEqual(previous_index(items, 4), 1)
+        self.assertEqual(previous_index(items, 3), 1)
+        self.assertEqual(previous_index(items, 2), 0)
+        self.assertEqual(previous_index(items, 0), 0)
 
     def test_available_lists_only_what_is_on_disk(self):
         self.assertEqual(available(self.root), {"minshawi": ["murattal"]})
