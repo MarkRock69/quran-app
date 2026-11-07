@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the app's SQLite database from the files in data/sources.
 
-    python3 tools/build_database.py [--output build/quran.db]
+    python3 tools/build_database.py [--output path]   (default: ~/.local/share/quran-app/quran.db)
 
 Inputs (all inside data/sources):
   kfgqpc/hafsData_v18.json   Uthmani text, modern-spelling text, page, line, juz'
@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from quran_app.arabic_text import has_letters, normalize_for_search  # noqa: E402
+from quran_app.paths import DATABASE_PATH, write_stamp  # noqa: E402
 from quran_app.page_layout import word_spans  # noqa: E402
 from quran_app.word_alignment import align_words  # noqa: E402
 
@@ -504,8 +505,12 @@ def build(output):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--output", type=Path, default=ROOT / "build" / "quran.db")
-    build(parser.parse_args().output)
+    parser.add_argument("--output", type=Path, default=DATABASE_PATH)
+    output = parser.parse_args().output
+    output.parent.mkdir(parents=True, exist_ok=True)
+    build(output)
+    if output == DATABASE_PATH:
+        write_stamp()  # so the reader knows it is up to date
 
 
 if __name__ == "__main__":

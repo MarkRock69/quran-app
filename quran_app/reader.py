@@ -36,6 +36,7 @@ from .bookmarks import DEFAULT_PATH, Bookmarks
 from .mushaf import PAGE_COUNT, Mushaf, hit_test, layout_page, spread_of
 from .numbers import format_number, next_style
 from .page_header import header_for
+from .paths import FONTS_DIR, ensure_database
 from .settings import Settings
 from .themes import DEFAULT_THEME, THEMES
 from .panels import BookmarksPanel, IndexPanel, JumpPanel, SearchPanel, SidePanel, TafsirPanel, ViewPanel
@@ -557,16 +558,18 @@ class ReaderWindow(QMainWindow):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--db", type=Path, default=ROOT / "build" / "quran.db")
-    parser.add_argument("--fonts", type=Path, default=ROOT / "data" / "fonts")
+    parser.add_argument("--db", type=Path, default=None, help="default: built and kept in the data folder")
+    parser.add_argument("--fonts", type=Path, default=FONTS_DIR)
     parser.add_argument("--page", type=int, default=1)
     parser.add_argument("--user-db", type=Path, default=DEFAULT_PATH, help="where bookmarks are kept")
     parser.add_argument("--spread", action="store_true", help="show two pages side by side")
     arguments = parser.parse_args()
-    if not arguments.db.exists():
-        sys.exit(f"{arguments.db} not found. Run: python3 tools/build_database.py")
+    if arguments.db is None:
+        arguments.db = ensure_database()  # built on the first run, and again only if the sources change
+    elif not arguments.db.exists():
+        sys.exit(f"{arguments.db} not found. Run: python3 tools/build_database.py --output {arguments.db}")
     if not all((arguments.fonts / name).exists() for name in ("QCF2001.ttf", "QCF2BSML.ttf")):
-        sys.exit("Fonts not found or incomplete. Run: python3 tools/fetch_fonts.py")
+        sys.exit(f"Fonts not found or incomplete in {arguments.fonts}. Run: python3 tools/fetch_fonts.py")
     application = QApplication(sys.argv[:1])
     application.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
     window = ReaderWindow(Mushaf(arguments.db), Fonts(arguments.fonts), arguments.page, arguments.spread,

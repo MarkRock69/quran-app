@@ -4,7 +4,7 @@ Source: everyayah.com, which keeps one mp3 per verse named SSSVVV.mp3 (chapter, 
 digits each) for each reciter and style, plus SSS000.mp3 for the basmala of a chapter, and a zip
 of all of them (000_versebyverse.zip) that tools/fetch_audio.py downloads once.
 
-On disk:  data/audio/<reciter>/<style>/SSSVVV.mp3
+On disk:  <audio folder, see paths.py>/<reciter>/<style>/SSSVVV.mp3
 """
 
 import re

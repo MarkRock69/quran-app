@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Download the Mushaf page fonts into data/fonts (one time, about 220 MB).
+"""Download the Mushaf page fonts into ~/.local/share/quran-app/fonts (one time, about 220 MB).
 
     python3 tools/fetch_fonts.py
 
 The fonts are the King Fahd Glorious Qur'an Printing Complex's, taken from the
 public mirror github.com/nuqayah/qpc-fonts. They are not kept in this
-repository (size, and their own licence); data/fonts is ignored by git.
+repository (size, and their own licence).
 
   QCF2001.ttf ... QCF2604.ttf  one font per page, drawn with the glyph codes in the database
   QCF2BSML.ttf                 the chapter banner, the 114 chapter names and the basmala
@@ -19,7 +19,11 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DESTINATION = ROOT / "data" / "fonts"
+sys.path.insert(0, str(ROOT))
+
+from quran_app.paths import FONTS_DIR  # noqa: E402
+
+DESTINATION = FONTS_DIR
 REPOSITORY = "https://github.com/nuqayah/qpc-fonts.git"
 
 

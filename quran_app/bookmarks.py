@@ -3,7 +3,9 @@
 import sqlite3
 from pathlib import Path
 
-DEFAULT_PATH = Path.home() / ".local" / "share" / "quran-app" / "user.db"
+from .paths import USER_DB
+
+DEFAULT_PATH = USER_DB
 
 
 class Bookmarks:

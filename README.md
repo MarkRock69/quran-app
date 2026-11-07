@@ -21,11 +21,10 @@ Planned stack: Python + Qt (PySide6, Qt Quick) with SQLite. Code uses the word
 
 Needs only Python 3.12 (already on Ubuntu 24.04), no installs.
 
-    python3 tools/build_database.py        # writes build/quran.db, about 30 seconds
+    python3 tools/build_database.py        # writes ~/.local/share/quran-app/quran.db, about 30 seconds
     python3 -m unittest discover -s tests  # about 95 checks, about 40 seconds
 
-The build stops with an error if any count or check fails. `build/` is not
-committed; it is rebuilt from `data/sources`.
+The build stops with an error if any count or check fails. The reader does this by itself on its first run and again only when the sources or the build code change.
 
 ## What is in the database
 
@@ -140,7 +139,19 @@ for personal use; do not make it public with these files in it.
 Recitations come from everyayah.com, one mp3 per verse (and one per chapter for its
 basmala, `SSS000.mp3`), as one zip for each reciter and style: al-Minshawi (murattal,
 mujawwad), Ali Jaber (murattal only; the site has no mujawwad for him) and Abdulbasit
-(murattal, mujawwad). They are unpacked into `data/audio/<reciter>/<style>/`, checked
+(murattal, mujawwad). They are unpacked into `~/.local/share/quran-app/audio/<reciter>/<style>/`, checked
 against the site's md5 list, and the zip is deleted. If it stops, run it again.
 `quran_app/audio_catalog.py` knows the file names and builds a playlist for any list of
 verses (basmala before the first verse of a chapter, except chapters 1 and 9).
+
+## Where the files live
+
+Everything big or personal is kept in one folder outside the project,
+`~/.local/share/quran-app/` (or the folder in the `QURAN_APP_DATA` environment variable):
+`fonts/`, `audio/`, `quran.db` (built from `data/sources`) and `user.db` (bookmarks and settings).
+A new copy of the project finds all of it, so the fonts and audio are downloaded once and
+nothing needs copying between releases. To move an old setup over:
+
+    mkdir -p ~/.local/share/quran-app
+    mv OLD_PROJECT/data/fonts ~/.local/share/quran-app/fonts
+    mv OLD_PROJECT/data/audio ~/.local/share/quran-app/audio   # if you had started it

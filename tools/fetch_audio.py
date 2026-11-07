@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Download the recitations into data/audio (one time). Needs the internet; nothing else.
+"""Download the recitations into ~/.local/share/quran-app/audio (one time). Needs the internet; nothing else.
 
     python3 tools/fetch_audio.py                       # everything (about 11 GB)
     python3 tools/fetch_audio.py --only minshawi       # one reciter
     python3 tools/fetch_audio.py --only minshawi:murattal abdulbasit:mujawwad
 
 Each reciter and style is one zip from everyayah.com (resumable: run it again if it stops).
-The zip is unpacked into data/audio/<reciter>/<style>/ as SSSVVV.mp3, checked against the
+The zip is unpacked into <that folder>/<reciter>/<style>/ as SSSVVV.mp3, checked against the
 site's md5 list, and deleted. Anything already complete is skipped.
 """
 
@@ -23,9 +23,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from quran_app.audio_catalog import (  # noqa: E402
     BASE_URL, CHECKSUM_NAME, RECITERS, ZIP_NAME, flat_name, folder, parse_md5,
 )
+from quran_app.paths import AUDIO_DIR  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-DESTINATION = ROOT / "data" / "audio"
+DESTINATION = AUDIO_DIR
 EXPECTED_VERSES = 6236
 CHUNK = 1 << 20
 

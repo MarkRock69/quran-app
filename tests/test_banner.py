@@ -5,7 +5,9 @@ from quran_app.banner import (
     BANNER_FRAME, BASMALA, CHAPTER_NAME_CODES, SURAH_WORD, chapter_name_glyph, plan_frame, stretch_x,
 )
 
-FONT = Path(__file__).resolve().parent.parent / "data" / "fonts" / "QCF2BSML.ttf"
+from quran_app.paths import FONTS_DIR
+
+FONT = FONTS_DIR / "QCF2BSML.ttf"
 
 
 class BannerTest(unittest.TestCase):
