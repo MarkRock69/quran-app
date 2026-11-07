@@ -26,8 +26,8 @@ class NamesTest(unittest.TestCase):
         self.assertEqual(parse_md5(text), {"001001.mp3": "d41d8cd98f00b204e9800998ecf8427e",
                                           "001002.mp3": "d41d8cd98f00b204e9800998ecf8427f"})
 
-    def test_the_three_reciters(self):
-        self.assertEqual([r.key for r in RECITERS], ["minshawi", "jabir", "abdulbasit"])
+    def test_the_reciters(self):
+        self.assertEqual([r.key for r in RECITERS], ["minshawi", "jabir", "husary", "abdulbasit"])
         self.assertEqual(sorted(reciter("minshawi").recordings), ["mujawwad", "murattal"])
         self.assertEqual(list(reciter("jabir").recordings), ["murattal"])
 

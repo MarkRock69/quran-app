@@ -39,6 +39,10 @@ RECITERS = (
     Reciter("jabir", "علي بن عبد الله جابر", {
         "murattal": Recording("Ali_Jaber_64kbps", 0.7),
     }),
+    Reciter("husary", "محمود خليل الحصري", {
+        "murattal": Recording("Husary_128kbps", 2.0),
+        "mujawwad": Recording("Husary_128kbps_Mujawwad", 3.0),
+    }),
     Reciter("abdulbasit", "عبد الباسط عبد الصمد", {
         "murattal": Recording("Abdul_Basit_Murattal_192kbps", 2.0),
         "mujawwad": Recording("Abdul_Basit_Mujawwad_128kbps", 3.0),

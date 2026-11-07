@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Download the recitations into ~/.local/share/quran-app/audio (one time). Needs the internet; nothing else.
 
-    python3 tools/fetch_audio.py                       # everything (about 11 GB)
+    python3 tools/fetch_audio.py                       # everything (about 16 GB)
     python3 tools/fetch_audio.py --only minshawi       # one reciter
     python3 tools/fetch_audio.py --only minshawi:murattal abdulbasit:mujawwad
 

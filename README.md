@@ -133,7 +133,7 @@ for personal use; do not make it public with these files in it.
 
 ## Audio
 
-    python3 tools/fetch_audio.py                     # one time, about 11 GB: all of it
+    python3 tools/fetch_audio.py                     # one time, about 16 GB: all of it
     python3 tools/fetch_audio.py --only minshawi     # or one reciter, or reciter:style
 
 Recitations come from everyayah.com, one mp3 per verse (and one per chapter for its
