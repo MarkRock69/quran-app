@@ -17,6 +17,10 @@ _FOOTNOTE = re.compile(r"\[\[(.*?)\]\]", re.S)
 CLEAR_QURAN_ORDER = 4
 
 
+def _escape(text):
+    return escape(text, quote=False)  # quotation marks need no escaping in body text
+
+
 @dataclass(frozen=True)
 class Source:
     id: int  # 0 for a source that is not available
@@ -37,19 +41,20 @@ class Entry:
 def body_to_html(key, body):
     """The stored text as simple HTML for a text browser."""
     if key == "sahih":
+        body = body.replace('\\"', '"')  # the source writes every quotation mark as \"
         parts = _FOOTNOTE.split(body)  # text, note, text, note, ..., text
         notes = [note.strip() for note in parts[1::2]]
         text = "".join(
-            escape(piece) + (f"<sup>{i}</sup>" if i <= len(notes) else "")
+            _escape(piece) + (f"<sup>{i}</sup>" if i <= len(notes) else "")
             for i, piece in enumerate(parts[0::2], 1)
         )
         out = f"<p>{text}</p>"
         if notes:
-            out += "<hr>" + "".join(f"<p><sup>{i}</sup> {escape(note)}</p>" for i, note in enumerate(notes, 1))
+            out += "<hr>" + "".join(f"<p><sup>{i}</sup> {_escape(note)}</p>" for i, note in enumerate(notes, 1))
         return out
     if "<p" in body or "<div" in body:
         return _EMPTY_PARAGRAPH.sub("", _PAGE_NUMBER.sub("", body))
-    return "".join(f"<p>{escape(line)}</p>" for line in body.split("\n") if line.strip())
+    return "".join(f"<p>{_escape(line)}</p>" for line in body.split("\n") if line.strip())
 
 
 def sources(connection):

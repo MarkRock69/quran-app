@@ -68,6 +68,12 @@ class EntryTest(unittest.TestCase):
     def test_plain_text_becomes_paragraphs_and_is_escaped(self):
         self.assertEqual(body_to_html("mukhtasar", "a < b\n\nc"), "<p>a &lt; b</p><p>c</p>")
 
+    def test_no_backslashes_in_sahih(self):
+        sahih = mushaf.tafsir_sources()[2]
+        for chapter, number in ((1, 2), (2, 255), (112, 1)):
+            self.assertNotIn("\\", mushaf.tafsir_entry(sahih, chapter, number).html)
+        self.assertIn('said "yes"', body_to_html("sahih", 'He said \\"yes\\"'))
+
     def test_footnote_order_and_escaping(self):
         html = body_to_html("sahih", "One[[first <note>]] two[[second]] three.")
         self.assertIn("One<sup>1</sup> two<sup>2</sup> three.", html)
