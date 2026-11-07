@@ -90,3 +90,17 @@ class PlaylistTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SpeedTests(unittest.TestCase):
+    def test_parse(self):
+        from quran_app.audio_catalog import parse_speed, speed_text
+        self.assertEqual(parse_speed("1.25"), 1.25)
+        self.assertEqual(parse_speed("١٫٥"), 1.5)
+        self.assertEqual(parse_speed("0.333"), 0.33)
+        self.assertEqual(parse_speed("3"), 3.0)
+        self.assertEqual(speed_text(1.0), "1")
+        self.assertEqual(speed_text(1.33), "1.33")
+        for bad in ("0.24", "3.01", "abc", ""):
+            with self.assertRaises(ValueError):
+                parse_speed(bad)

@@ -22,7 +22,12 @@ class Player(QObject):
         self._player.errorOccurred.connect(lambda *_: self.active and self._go(self._index + 1))  # skip a bad file
         self._queue = []
         self._index = -1
+        self._speed = 1.0
         self.active = False
+
+    def set_speed(self, speed):
+        self._speed = speed
+        self._player.setPlaybackRate(speed)
 
     def play_queue(self, queue):
         self._queue = list(queue)
@@ -37,6 +42,7 @@ class Player(QObject):
         self._index = index
         item = self._queue[index]
         self._player.setSource(QUrl.fromLocalFile(str(item.path)))
+        self._player.setPlaybackRate(self._speed)
         self._player.play()
         self.state_changed.emit(True)
         self.verse_changed.emit(item.chapter, item.number)

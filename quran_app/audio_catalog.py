@@ -84,6 +84,29 @@ def parse_md5(text):
     return result
 
 
+SPEED_MIN, SPEED_MAX = 0.25, 3.0
+SPEED_PRESETS = (0.25, 0.33, 0.5, 0.67, 0.75, 1, 1.25, 1.33, 1.5, 1.67, 1.75, 2)
+
+
+def speed_text(speed):
+    """1.0 -> '1', 1.330 -> '1.33'."""
+    return f"{speed:.2f}".rstrip("0").rstrip(".")
+
+
+def parse_speed(text):
+    """The playback speed typed in `text`, rounded to two decimals. Raises ValueError (message in Arabic)."""
+    from .navigation import normalize_digits
+    cleaned = normalize_digits(text.strip()).replace("\u066b", ".").replace(",", ".").replace("\u060c", ".")
+    try:
+        value = float(cleaned)
+    except ValueError:
+        raise ValueError("اكتب رقماً، مثل 1.25") from None
+    value = round(value, 2)
+    if not SPEED_MIN <= value <= SPEED_MAX:
+        raise ValueError(f"السرعة من {speed_text(SPEED_MIN)} إلى {speed_text(SPEED_MAX)}")
+    return value
+
+
 class QueueItem(NamedTuple):
     chapter: int
     number: int  # 0 for the basmala of the chapter

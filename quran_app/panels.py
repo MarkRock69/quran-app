@@ -11,7 +11,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .audio_catalog import RECITERS, STYLE_NAMES, available, build_queue
+from .audio_catalog import (
+    RECITERS, SPEED_PRESETS, STYLE_NAMES, available, build_queue, parse_speed, speed_text,
+)
 from .index_lists import Band, ChapterRow, RubRow, revelation_text, verse_count_text
 from .navigation import HINT, KINDS, normalize_digits
 from .passages import PASSAGE_KINDS
@@ -416,6 +418,7 @@ class AudioPanel(QWidget):
     """Choose a reciter, a style and a range of verses, and play it."""
 
     play_requested = Signal(list)  # a list of audio_catalog.QueueItem
+    speed_changed = Signal(float)
     MAX_REPEATS = 99
     MAX_QUEUE = 20000
 
@@ -456,6 +459,22 @@ class AudioPanel(QWidget):
             repeats.addWidget(edit)
         repeats.addStretch()
         layout.addLayout(repeats)
+
+        speed = QHBoxLayout()
+        self.speed = QComboBox()
+        self.speed.setEditable(True)
+        self.speed.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.speed.setMaximumWidth(90)
+        for value in SPEED_PRESETS:
+            self.speed.addItem(speed_text(value), value)
+        self.speed.setCurrentIndex(self.speed.findData(1))
+        self._speed = 1.0
+        self.speed.activated.connect(lambda *_: self._apply_speed())
+        self.speed.lineEdit().editingFinished.connect(self._apply_speed)
+        speed.addWidget(QLabel("سرعة التشغيل"))
+        speed.addWidget(self.speed)
+        speed.addStretch()
+        layout.addLayout(speed)
 
         presets = QVBoxLayout()
         for label, preset in (
@@ -620,6 +639,19 @@ class AudioPanel(QWidget):
         self._set("juz", str(self._mushaf.page_info(self._context()["page"]).juz))
 
     # ------------------------------------------------------------ playing
+
+    def _apply_speed(self):
+        try:
+            value = parse_speed(self.speed.currentText())
+        except ValueError as error:
+            self.status.setText(str(error))
+            self.speed.setCurrentText(speed_text(self._speed))
+            return
+        self.speed.setCurrentText(speed_text(value))
+        if value != self._speed:
+            self._speed = value
+            self.speed_changed.emit(value)
+        self.status.setText("")
 
     def _repeats(self, edit, what):
         try:

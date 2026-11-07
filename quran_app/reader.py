@@ -415,6 +415,7 @@ class ReaderWindow(QMainWindow):
         self.player = Player()
         self.audio = AudioPanel(mushaf, AUDIO_DIR, self._reading_position, digits)
         self.audio.play_requested.connect(self.start_playing)
+        self.audio.speed_changed.connect(self.player.set_speed)
         self.player.verse_changed.connect(self.follow_verse)
         self.player.position_changed.connect(self._show_position)
         self.player.state_changed.connect(self._show_state)
