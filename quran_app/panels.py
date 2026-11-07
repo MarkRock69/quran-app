@@ -886,7 +886,7 @@ class ShortcutsPanel(QWidget):
         table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         table.setWordWrap(True)
         for row, (keys, meaning) in enumerate(SHORTCUTS):
-            key_item = QTableWidgetItem(keys)
+            key_item = QTableWidgetItem(chr(0x202A) + keys + chr(0x202C))  # keep Latin keys left-to-right in an RTL cell
             key_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             table.setItem(row, 0, QTableWidgetItem(meaning))
             table.setItem(row, 1, key_item)
