@@ -589,7 +589,6 @@ class ReaderWindow(QMainWindow):
         self.speed_box = QComboBox()
         self.speed_box.setEditable(True)
         self.speed_box.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self.speed_box.setMaximumWidth(80)
         self.speed_box.setToolTip("سرعة التشغيل (من 0.25 إلى 3)")
         for value in SPEED_PRESETS:
             self.speed_box.addItem(speed_text(value), value)
@@ -598,14 +597,21 @@ class ReaderWindow(QMainWindow):
         self.speed_box.activated.connect(lambda *_: self._speed_edited())
         self.speed_box.lineEdit().editingFinished.connect(self._speed_edited)
         self.verse_times, self.passage_times = QSpinBox(), QSpinBox()
-        settings_row.addWidget(QLabel("السرعة"))
-        settings_row.addWidget(self.speed_box)
-        for label, edit in (("تكرار الآية", self.verse_times), ("تكرار المقطع", self.passage_times)):
-            edit.setRange(1, self.audio.MAX_REPEATS)  # arrows, and the mouse wheel, change it
-            edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            edit.valueChanged.connect(self._bar_repeats_edited)
-            settings_row.addWidget(QLabel(label))
-            settings_row.addWidget(edit)
+        settings_row.setSpacing(16)  # between a label with its input and the next
+        metrics = self.fontMetrics()
+        self.speed_box.setFixedWidth(metrics.horizontalAdvance("0.00") + 40)  # text, plus the arrow and the frame
+        for box in (self.verse_times, self.passage_times):
+            box.setRange(1, self.audio.MAX_REPEATS)  # arrows, and the mouse wheel, change it
+            box.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            box.setFixedWidth(metrics.horizontalAdvance("99") + 38)
+            box.valueChanged.connect(self._bar_repeats_edited)
+        for label, widget in (("السرعة", self.speed_box), ("تكرار الآية", self.verse_times),
+                              ("تكرار المقطع", self.passage_times)):
+            pair = QHBoxLayout()
+            pair.setSpacing(3)  # close to its label
+            pair.addWidget(QLabel(label))
+            pair.addWidget(widget)
+            settings_row.addLayout(pair)
         # the range and what is playing go to the right of the controls, speed and repetitions to the left
         self.range_label = QLabel()
         for label in (self.range_label, self.now_playing):
