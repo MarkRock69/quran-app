@@ -181,6 +181,22 @@ against the site's md5 list, and the zip is deleted. If it stops, run it again.
 `quran_app/audio_catalog.py` knows the file names and builds a playlist for any list of
 verses (basmala before the first verse of a chapter, except chapters 1 and 9).
 
+### Saved audio presets
+
+The الصوت tab has a "المقاطع المحفوظة" row: pick a name and press "تطبيق" to load it, "جديد…" to make one,
+"حذف" to delete one. "جديد…" opens a window with a name and a tick box for each setting: the first verse, the
+last verse, the reciter, the style, the speed and the two repetition counts. Only ticked settings are saved,
+and loading a preset changes only those, so everything else stays as it was. (Loading fills in the settings;
+press "تشغيل" to play. A reciter or style that is not downloaded is skipped, and the status line says so.)
+They are kept in one file, `~/.local/share/quran-app/audio_presets.json`, next to the other data. It is plain
+JSON and can be edited by hand; a setting that is invalid is ignored, and a file that cannot be read is set
+aside as `audio_presets.json.bad`:
+
+    {"version": 1, "presets": [
+      {"name": "الإخلاص ×٣", "from": [112, 1], "to": [112, 4], "reciter": "minshawi",
+       "style": "murattal", "speed": 0.75, "verse_repeats": 3, "passage_repeats": 2}
+    ]}
+
 ## Where the files live
 
 Everything big or personal is kept in one folder outside the project,

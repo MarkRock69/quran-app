@@ -4,7 +4,7 @@ The big files (page fonts, audio, the database built from the sources) live in o
 the project, so a new copy of the project finds them and nothing is downloaded or built twice:
 
     ~/.local/share/quran-app/      (or the folder named by the QURAN_APP_DATA environment variable)
-        fonts/  audio/  quran.db  user.db (bookmarks, settings)
+        fonts/  audio/  quran.db  user.db (bookmarks, settings)  audio_presets.json (saved audio presets)
 
 The database is rebuilt, in about 30 seconds, only when what it is built from has changed.
 """
@@ -22,6 +22,7 @@ FONTS_DIR = DATA_DIR / "fonts"
 AUDIO_DIR = DATA_DIR / "audio"
 DATABASE_PATH = DATA_DIR / "quran.db"
 USER_DB = DATA_DIR / "user.db"
+AUDIO_PRESETS = DATA_DIR / "audio_presets.json"
 _STAMP = DATA_DIR / "quran.db.stamp"
 
 # The code the database is built by (tools/build_database.py and the modules it uses).

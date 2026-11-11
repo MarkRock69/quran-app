@@ -429,9 +429,10 @@ class ReaderWindow(QMainWindow):
         self.tafsir = TafsirPanel(mushaf, fonts.text_family, digits, settings.get("tafsir_order"))
         self.tafsir.order_changed.connect(lambda keys: settings.set("tafsir_order", keys))
         self.player = Player()
-        self.audio = AudioPanel(mushaf, AUDIO_DIR, self._reading_position, digits)
+        self.audio = AudioPanel(mushaf, AUDIO_DIR, self._reading_position, digits, lambda: self._speed)
         self.audio.play_requested.connect(self.start_playing)
         self.audio.repeats_changed.connect(self._apply_repeats)
+        self.audio.speed_requested.connect(self._set_speed)
         self._range = None  # (first verse, last verse) of what is playing
         self.player.verse_changed.connect(self.follow_verse)
         self.player.position_changed.connect(self._show_position)
@@ -640,6 +641,11 @@ class ReaderWindow(QMainWindow):
             grid.setColumnStretch(column_number, 1)
         bar.addWidget(holder, 1)
         bar.hide()
+
+    def _set_speed(self, value):
+        """A saved preset sets the speed."""
+        self.speed_box.setCurrentText(speed_text(value))
+        self._speed_edited()
 
     def _speed_edited(self):
         try:

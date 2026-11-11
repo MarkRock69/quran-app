@@ -6,12 +6,15 @@ from html import escape
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPalette, QTextDocument
 from PySide6.QtWidgets import (
-    QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton,
+    QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QHeaderView, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
     QRadioButton, QSpinBox, QStyle, QStyledItemDelegate, QTableWidget, QTableWidgetItem, QTabWidget, QTextBrowser, QVBoxLayout, QHBoxLayout,
     QWidget,
 )
 
-from .audio_catalog import RECITERS, STYLE_NAMES, available, build_queue
+from . import audio_presets
+from .audio_catalog import RECITERS, STYLE_NAMES, available, build_queue, speed_text
+from .paths import AUDIO_PRESETS
+from .preset_dialog import PresetDialog
 from .index_lists import Band, ChapterRow, RubRow, revelation_text, verse_count_text
 from .navigation import HINT, KINDS, normalize_digits
 from .passages import PASSAGE_KINDS
@@ -419,13 +422,18 @@ class AudioPanel(QWidget):
 
     play_requested = Signal(list)  # a list of audio_catalog.QueueItem
     repeats_changed = Signal(int, int)  # each verse, the whole passage: valid values the user has just set
+    speed_requested = Signal(float)  # a saved preset sets the speed (the playback bar owns it)
     MAX_REPEATS = 99
     MAX_QUEUE = 20000
 
-    def __init__(self, mushaf, audio_root, context, digits=lambda: "indic"):
-        """`context()` gives the reader's position: {'verse': (c, v) or None, 'page': n}."""
+    def __init__(self, mushaf, audio_root, context, digits=lambda: "indic", speed=lambda: 1.0,
+                 presets_path=AUDIO_PRESETS):
+        """`context()` gives the reader's position: {'verse': (c, v) or None, 'page': n}; `speed()` the playback
+        speed now; `presets_path` the file of saved presets."""
         super().__init__()
         self._mushaf, self._root, self._context, self._digits = mushaf, audio_root, context, digits
+        self._speed, self._presets_path = speed, presets_path
+        self._saved = audio_presets.load(presets_path, mushaf.verse_count)
         layout = QVBoxLayout(self)
         self.note = QLabel()
         self.note.setWordWrap(True)
@@ -471,6 +479,17 @@ class AudioPanel(QWidget):
             button.clicked.connect(preset)
             presets.addWidget(button)
         layout.addLayout(presets)
+
+        layout.addWidget(QLabel("المقاطع المحفوظة"))
+        saved_row = QHBoxLayout()
+        self.saved = QComboBox()
+        saved_row.addWidget(self.saved, 1)
+        for label, action in (("تطبيق", self._apply_saved), ("جديد…", self._new_saved), ("حذف", self._delete_saved)):
+            button = QPushButton(label)
+            button.clicked.connect(action)
+            saved_row.addWidget(button)
+        layout.addLayout(saved_row)
+        self._fill_saved()
 
         self.basmala = QCheckBox("تشغيل البسملة في أول كل سورة")
         self.basmala.setChecked(True)
@@ -522,11 +541,94 @@ class AudioPanel(QWidget):
         box.setCurrentIndex(min(selected, box.count()) - 1)
         box.blockSignals(False)
 
+    # ------------------------------------------------------------ saved presets
+
+    def _fill_saved(self, select=None):
+        digits = self._digits()
+        self.saved.clear()
+        for preset in self._saved:
+            self.saved.addItem(preset["name"], preset["name"])
+            self.saved.setItemData(self.saved.count() - 1, audio_presets.summary(preset, self._mushaf.chapter_name, digits),
+                                   Qt.ItemDataRole.ToolTipRole)
+        self.saved.setCurrentIndex(max(0, self.saved.findData(select)))
+
+    def current_values(self):
+        """Everything a preset can hold, as the panel shows it now."""
+        each, whole = self.repeats()
+        return {"from": list(self._start()), "to": list(self._end()), "reciter": self.reciter.currentData(),
+                "style": self.style.currentData(), "speed": self._speed(), "verse_repeats": each,
+                "passage_repeats": whole}
+
+    def _new_saved(self):
+        current = self.current_values()
+        current["reciter"] = current["reciter"] or RECITERS[0].key
+        current["style"] = current["style"] or "murattal"
+        dialog = PresetDialog(self._mushaf, self._digits, self._found, current, [p["name"] for p in self._saved], self)
+        if dialog.exec() and dialog.preset():
+            preset = dialog.preset()
+            self._saved = audio_presets.upsert(self._saved, preset)
+            self._store()
+            self._fill_saved(preset["name"])
+
+    def _store(self):
+        try:
+            audio_presets.save(self._presets_path, self._saved)
+        except OSError as error:
+            self.status.setText(f"تعذّر حفظ الملف: {error}")
+
+    def _delete_saved(self):
+        name = self.saved.currentData()
+        if name is None:
+            return
+        answer = QMessageBox.question(self, "حذف", f"حذف المقطع المحفوظ «{name}»؟")
+        if answer == QMessageBox.StandardButton.Yes:
+            self._saved = audio_presets.remove(self._saved, name)
+            self._store()
+            self._fill_saved()
+
+    def _apply_saved(self):
+        preset = audio_presets.find(self._saved, self.saved.currentData())
+        if preset:
+            self.apply_preset(preset)
+
+    def apply_preset(self, preset):
+        """Load a preset: only the settings it holds change, the rest stay as they are."""
+        skipped = []
+        if "reciter" in preset:
+            index = self.reciter.findData(preset["reciter"])
+            if index < 0:
+                skipped.append("المقرئ غير منزّل")
+            else:
+                self.reciter.setCurrentIndex(index)
+        if "style" in preset:
+            index = self.style.findData(preset["style"])
+            if index < 0:
+                skipped.append("الرواية غير منزّلة لهذا المقرئ")
+            else:
+                self.style.setCurrentIndex(index)
+        if "from" in preset:
+            self._set_start(*preset["from"])
+        if "to" in preset:
+            self._set_end(*preset["to"])
+        if self._end() < self._start():  # only one end was in the preset: the other follows it
+            if "from" in preset:
+                self._set_end(*self._start())
+            else:
+                self._set_start(*self._end())
+        if "verse_repeats" in preset or "passage_repeats" in preset:
+            each, whole = self.repeats()
+            self.set_repeats(preset.get("verse_repeats", each), preset.get("passage_repeats", whole))
+        if "speed" in preset:
+            self.speed_requested.emit(float(preset["speed"]))
+        done = f"طُبّق «{preset['name']}»"
+        self.status.setText(done + (": " + "، ".join(skipped) if skipped else ""))
+
     def refresh_numbers(self):
         for chapter_box, verse_box in ((self.from_chapter, self.from_verse), (self.to_chapter, self.to_verse)):
             verse = verse_box.currentData() or 1
             self._fill_verses(verse_box, chapter_box.currentData(), verse)
         self._fill_chapters()
+        self._fill_saved(self.saved.currentData())
 
     def _start(self):
         return (self.from_chapter.currentData(), self.from_verse.currentData())
